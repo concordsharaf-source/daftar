@@ -1,0 +1,11 @@
+# Build outputs
+build/
+app/build/
+*.apk
+*.aab
+.idea/
+.gradle/
+*.log
+local.properties
+.kotlin/
+captures/
