@@ -152,6 +152,14 @@ fun HomeScreen(
                     fontSize = 30.sp,
                     color = colors.primary
                 )
+                Spacer(modifier = Modifier.size(6.dp))
+                Text(
+                    text = "v2.5",
+                    fontFamily = DaftarFonts.Cairo,
+                    fontSize = 11.sp,
+                    color = colors.primary.copy(alpha = 0.65f),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = { showExportSheet = true }) {
                     Icon(Icons.Default.Backup, contentDescription = "النسخ الاحتياطي")
