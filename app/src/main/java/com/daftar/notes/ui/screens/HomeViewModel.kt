@@ -1,5 +1,6 @@
 package com.daftar.notes.ui.screens
 
+import android.icu.text.Collator
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.daftar.notes.data.NotesRepository
@@ -16,6 +17,10 @@ class HomeViewModel(private val repo: NotesRepository) : ViewModel() {
 
     val searchQuery = MutableStateFlow("")
 
+    val sortMode = MutableStateFlow("newest")
+
+    private val arabicCollator = Collator.getInstance(java.util.Locale("ar"))
+
     val allNotes: StateFlow<List<Note>> = repo.getAllNotes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -28,15 +33,43 @@ class HomeViewModel(private val repo: NotesRepository) : ViewModel() {
     val folders: StateFlow<List<com.daftar.notes.data.Folder>> = repo.getAllFolders()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val notes = combine(allNotes, searchQuery) { notes, query ->
-        if (query.isBlank()) notes
+    val notes = combine(allNotes, searchQuery, sortMode) { notes, query, mode ->
+        val filtered = if (query.isBlank()) notes
         else notes.filter { note ->
             note.title.contains(query, ignoreCase = true) ||
                 com.daftar.notes.util.TextUtils.stripHtml(note.contentHtml).contains(query, ignoreCase = true)
         }
+        sortNotes(filtered, mode)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun search(q: String) { searchQuery.value = q }
+
+    fun setSortMode(mode: String) { sortMode.value = mode }
+
+    /** Requirement #10: newest / oldest / alphabetical (latin) / alphabetical (Arabic). */
+    private fun sortNotes(notes: List<Note>, mode: String): List<Note> {
+        return when (mode) {
+            "oldest" -> notes.sortedBy { it.updatedAt }
+            "alpha" -> notes.sortedWith(compareBy(arabicCollator) { it.title.ifBlank { "بدون عنوان" } })
+            "alphaAr" -> notes.sortedWith(compareBy(naturalArabicCollator()) { it.title.ifBlank { "بدون عنوان" } })
+            else -> notes // newest (pinned notes are always grouped on top by the UI)
+        }
+    }
+
+    /** A collator that normalizes Arabic diacritics and hamza forms for fair A-Z Arabic sorting. */
+    private fun naturalArabicCollator(): java.util.Comparator<String> = Comparator { a, b ->
+        arabicCollator.compare(normalizeArabic(a), normalizeArabic(b))
+    }
+
+    companion object {
+        private val HAMZA_MAP = mapOf(
+            'أ' to 'ا', 'إ' to 'ا', 'آ' to 'ا', 'ؤ' to 'و', 'ئ' to 'ي'
+        )
+        private val DIACRITICS = Regex("[\u064B-\u065F\u0670\u0640]")
+        fun normalizeArabic(text: String): String =
+            text.map { HAMZA_MAP.getOrDefault(it, it) }.joinToString("")
+                .replace(DIACRITICS, "")
+    }
 
     suspend fun createNote(): Long {
         return try {

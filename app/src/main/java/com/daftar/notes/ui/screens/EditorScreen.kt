@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -160,6 +161,7 @@ fun EditorScreen(
     val colors = MaterialTheme.colorScheme
 
     val richState = rememberRichTextState()
+    val density = LocalDensity.current
     val scrollState = rememberScrollState()
     var contentLoaded by remember { mutableStateOf(false) }
 
@@ -411,7 +413,7 @@ fun EditorScreen(
                             if (canUndo) {
 
                                 viewModel.snapshotForUndo()
-                                viewModel.undo(richState)
+                                viewModel.undo()
                             }
                         }
                     ) {
@@ -434,7 +436,7 @@ fun EditorScreen(
                             if (canRedo) {
 
                                 viewModel.snapshotForUndo()
-                                viewModel.redo(richState)
+                                viewModel.redo()
                             }
                         }
                     ) {
@@ -611,8 +613,12 @@ fun EditorScreen(
                 .padding(padding)
         ) {
 
+            // Title block: headline TextField (~40dp min) + 8dp gap + 1dp divider
+            val titleBlockPx =
+                with(density) { (40.dp + 8.dp + 1.dp).toPx() } + lineHeightPx * 1.5f
             PaperBackground(
-                lineHeightPx = lineHeightPx
+                lineHeightPx = lineHeightPx,
+                titleHeightPx = titleBlockPx
             ) {
 
                 Column(

@@ -1,0 +1,158 @@
+==================================================
+دفتر | Daftar - هيكل المشروع ووظيفة كل ملف
+نسخة 2.6 - تم الاختبار والإصلاح بتاريخ أغسطس 2026
+==================================================
+
+تطبيق ملاحظات Android مبني بـ Kotlin + Jetpack Compose + Room + DataStore.
+البنية معيارية (Modular): كل وظيفة في ملف مستقل ليسهل التعديل اليدوي من GitHub.
+
+--------------------------------------------------
+1. نقطة الدخول
+--------------------------------------------------
+app/src/main/java/com/daftar/notes/MainActivity.kt
+  - النشاط الرئيسي للتطبيق.
+  - يربط البوابات: فحص قفل التطبيق (AppLockGate) قبل عرض المحتوى.
+  - يستدعي DaftarTheme (الألوان والخطوط الموحدة) ويحدد الشاشات.
+
+--------------------------------------------------
+2. طبقة البيانات (Room Database)
+--------------------------------------------------
+app/src/main/java/com/daftar/notes/data/NoteDatabase.kt
+  - تعريف قاعدة بيانات Room: الجداول + DAOs + تحويل Migrations.
+app/src/main/java/com/daftar/notes/data/Note.kt
+  - كيان الملاحظة: id، العنوان، المحتوى HTML، الحالة، المفضلة،
+    التثبيت، اللون، المجلد، الحذف الناعم.
+app/src/main/java/com/daftar/notes/data/NoteFolder.kt
+  - كيان المجلدات لتنظيم الملاحظات.
+app/src/main/java/com/daftar/notes/data/NoteImage.kt
+  - كيان الصور المرفقة بالملاحظات.
+app/src/main/java/com/daftar/notes/data/NoteDao.kt
+  - استعلامات Room: جلب/حفظ/تحديث/حذف الملاحظات والمجلدات والصور.
+  - الاستعلامات الحية (Flow) لتحديث القائمة تلقائيًا.
+app/src/main/java/com/daftar/notes/data/NotesRepository.kt
+  - طبقة المستودع: تُغلف DAOs وتدير التخزين المحلي
+    (مستودع وحيد قابل للاختبار بسهولة).
+
+--------------------------------------------------
+3. التفضيلات (DataStore)
+--------------------------------------------------
+app/src/main/java/com/daftar/notes/data/UserPreferences.kt
+  - تفضيلات المستخدم: القالب (فاتح/داكن)، القفل، حالة التطبيق، إلخ.
+
+--------------------------------------------------
+4. طبقة الأمان
+--------------------------------------------------
+app/src/main/java/com/daftar/notes/security/AppLockManager.kt
+  - إدارة القفل: تفعيل/إيقاف PIN، التحقق من PIN، حالة القفل.
+app/src/main/java/com/daftar/notes/security/PinStore.kt
+  - تخزين PIN داخل Android Keystore (لا يُمس من خارج التطبيق).
+app/src/main/java/com/daftar/notes/security/AppLockGate.kt
+  - شاشة القفل (Composable): إدخال PIN قبل فتح التطبيق.
+
+--------------------------------------------------
+5. الواجهة - الشاشات الرئيسية
+--------------------------------------------------
+app/src/main/java/com/daftar/notes/ui/screens/HomeScreen.kt
+  - القائمة الرئيسية: البحث، الترتيب (الأحدث/الأقدم/أبجدي/أبجدي عربي)،
+    التثبيت، المفضلة، الألوان، إنشاء ملاحظة جديدة.
+app/src/main/java/com/daftar/notes/ui/screens/HomeViewModel.kt
+  - منطق القائمة: البحث النصي، الوضعيات (تثبيت/مفضلة/أخرى)،
+    الترتيب بما فيه تطبيع الأحرف العربية (hamza + التشكيل)،
+    إنشاء/حذف/تثبيت/تفضيل/تلوين الملاحظات.
+app/src/main/java/com/daftar/notes/ui/screens/EditorScreen.kt
+  - شاشة تحرير الملاحظة: العنوان، المحرر الغني RichText،
+    شريط التنسيق (Bold/Italic/Underline/Lists/العنوان/اللون)،
+    Undo/Redo، الصور، المشاركة، تصدير PDF، الحفظ.
+app/src/main/java/com/daftar/notes/ui/screens/EditorViewModel.kt
+  - منطق التحرير: الحفظ التلقائي (debounce 750ms)،
+    الحفظ الفوري عند الخروج (saveNow)، مكدس Undo/Redo
+    (حد 50 لقطة + لقطات تلقائية كل 1.5 ثانية أثناء الكتابة)،
+    تحميل/حفظ الصور.
+app/src/main/java/com/daftar/notes/ui/screens/SettingsScreen.kt
+  - الإعدادات: القالب، الأمان، النسخ الاحتياطي، عن التطبيق.
+
+--------------------------------------------------
+6. المكونات المشتركة
+--------------------------------------------------
+app/src/main/java/com/daftar/notes/ui/components/NoteCard.kt
+  - بطاقة الملاحظة في القائمة: العنوان، المقطع، التاريخ،
+    حالة القفل/التثبيت/المفضلة/اللون.
+app/src/main/java/com/daftar/notes/ui/components/PaperBackground.kt
+  - خلفية الورق المسطرة: خطوط متزامنة مع ارتفاع السطر،
+    تبدأ تحت منطقة العنوان فقط (إصلاح TEST 12).
+app/src/main/java/com/daftar/notes/ui/theme/
+  - الألوان، الخطوط (DaftarFonts: Cairo)، والموضوع.
+
+--------------------------------------------------
+7. الأدوات المساعدة
+--------------------------------------------------
+app/src/main/java/com/daftar/notes/util/BackupManager.kt
+  - النسخ الاحتياطي والاستعادة:
+    - تصدير ZIP كامل (daftar.json + images/<noteId>/).
+    - دعم استيراد JSON قديم (v2) للتوافق.
+    - الاستيراد يعيد الصور مع الملاحظات.
+app/src/main/java/com/daftar/notes/util/PdfExporter.kt
+  - تصدير الملاحظة إلى PDF مع التنسيق.
+app/src/main/java/com/daftar/notes/util/TextUtils.kt
+  - دوال نصية مساعدة (HTML <-> نص، الاقتباس).
+app/src/main/java/com/daftar/notes/util/ImageUtils.kt
+  - ضغط ومعالجة الصور قبل التخزين.
+
+--------------------------------------------------
+8. الموارد
+--------------------------------------------------
+app/src/main/res/
+  - القيم (strings)، الأيقونات، الخطوط (assets/fonts/).
+app/src/main/AndroidManifest.xml
+  - صلاحيات التطبيق والأنشطة.
+
+--------------------------------------------------
+9. ملفات البناء
+--------------------------------------------------
+build.gradle.kts (مشروع)  - إضافات Android/KSP/Kotlin.
+app/build.gradle.kts      - إعدادات الوحدة: SDKs، المكتبات،
+                            الاختبارات (JUnit + MockK + coroutines-test).
+gradle.properties         - إعدادات JVM (معدلة لتناسب البيئة 4GB).
+settings.gradle.kts       - اسم الوحدة والمستودعات.
+gradle/wrapper/           - Gradle 8.5 wrapper.
+
+--------------------------------------------------
+10. الاختبارات
+--------------------------------------------------
+app/src/test/java/com/daftar/notes/ui/screens/EditorViewModelSaveTest.kt
+  - 9 اختبارات JVM خالصة (بدون أندرويد):
+    1. contentUpdateFlowsToDatabase         - الحفظ التلقائي يصل لـRoom
+    2. identicalContentIsNotSavedAgain      - عدم تكرار الحفظ المتطابق
+    3. saveNowAsyncFlushesImmediately       - الحفظ الفوري عند الخروج
+    4. titleUpdateAlsoPersistsToDatabase    - حفظ العنوان
+    5. manualSnapshotUndoRedoWorks          - التراجع/الإعادة اليدوي
+    6. undoAlsoRestoresTheTitle             - التراجع يعيد العنوان أيضًا
+    7. typingCreatesUndoSnapshotsAutomatically - لقطات تلقائية للكتابة
+    8. undoStackIsBounded                   - حد المكدس 50
+    9. arabicNormalizationIsDeterministic   - تطبيع العربية للترتيب
+  - جميعها نجحت (11/11 مع الاختبارات الإضافية السابقة).
+
+--------------------------------------------------
+11. CI/CD
+--------------------------------------------------
+.github/workflows/build-apk.yml
+  - بناء APK تلقائيًا عبر GitHub Actions عند كل push.
+  - يرفع APK كـ artifact قابل للتنزيل.
+
+--------------------------------------------------
+12. الإصلاحات في هذه النسخة (2.6)
+--------------------------------------------------
+- TEST 1  : الحفظ التلقائي يعمل (debounce 750ms) + اختبارات مؤكدة.
+- TEST 2  : إنشاء ملاحظة من القائمة والمحرر (مسارات محفوظة).
+- TEST 5  : التثبيت والمفضلة يعملان (isPinned/isFavorite في Room).
+- TEST 8  : ألوان Labels تعمل (colorLabel في الملاحظة + NoteCard).
+- TEST 10 : أُضيف الترتيب: الأقدم/الأبجدي/الأبجدي العربي
+            (normalizeArabic يزيل التشكيل ويطوي الهمزات).
+- TEST 11 : البحث: الإصلاح (نافذة البحث تنشط فورًا عند الكتابة).
+- TEST 12 : أسطر الورق تقتصر على منطقة الكتابة تحت العنوان
+            (titleHeightPx).
+- TEST 19 : Undo/Redo يعمل على الكتابة العادية (لقطات تلقائية
+            قبل التعديل) وليس فقط أزرار التنسيق.
+- TEST 21 : النسخ الاحتياطي ZIP يشمل الصور + legacy JSON.
+- خطأ بناء: JDK 21 استُبدل بـJDK 17 (androidJdkImage transform).
+- ذاكرة: JVM args عُدلت إلى 1g لمنع OOM.

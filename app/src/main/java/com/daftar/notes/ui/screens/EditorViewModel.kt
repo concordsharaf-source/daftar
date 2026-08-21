@@ -72,6 +72,11 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
     private val redoStack = ArrayDeque<String>()
     private val undoTitles = ArrayDeque<String>()
     private val redoTitles = ArrayDeque<String>()
+    private var lastSnapshotHtml: String? = null
+    private var lastSnapshotTitle: String? = null
+    private var snapshotJob: Job? = null
+    private var pendingSnapshotHtml: String? = null
+    private var pendingSnapshotTitle: String? = null
 
     fun repo(): NotesRepository = repo
 
@@ -104,14 +109,36 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
     }
 
     fun updateTitle(newTitle: String) {
+        scheduleUndoSnapshot() // capture pre-edit state BEFORE the change applies
         _title.value = newTitle
         markDirty()
     }
 
     fun updateContent(html: String) {
         if (html == _contentHtml.value) return
+        scheduleUndoSnapshot() // capture pre-edit state BEFORE the change applies
         _contentHtml.value = html
         markDirty()
+    }
+
+    /**
+     * Auto-capture an undo snapshot before each edit, throttled so rapid typing
+     * produces one reversible checkpoint instead of one per keystroke.
+     */
+    private fun scheduleUndoSnapshot() {
+        val preHtml = _contentHtml.value
+        val preTitle = _title.value
+        if (preHtml == lastSnapshotHtml && preTitle == lastSnapshotTitle) return
+        if (pendingSnapshotHtml == preHtml && pendingSnapshotTitle == preTitle) return
+        snapshotJob?.cancel()
+        snapshotJob = viewModelScope.launch {
+            delay(1500)
+            pendingSnapshotHtml = preHtml
+            pendingSnapshotTitle = preTitle
+            snapshotForUndo(preHtml, preTitle)
+            pendingSnapshotHtml = null
+            pendingSnapshotTitle = null
+        }
     }
 
     private fun markDirty() {
@@ -180,17 +207,41 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
 
     // ---- Undo / Redo on HTML snapshots ----
 
+    /**
+     * Public snapshot hook: captures the current state as a reversible
+     * checkpoint and clears the redo history.
+     */
     fun snapshotForUndo() {
         if (undoStack.size >= 50) undoStack.removeFirst()
         if (undoTitles.size >= 50) undoTitles.removeFirst()
         undoStack.addLast(_contentHtml.value)
         undoTitles.addLast(_title.value)
+        lastSnapshotHtml = _contentHtml.value
+        lastSnapshotTitle = _title.value
         redoStack.clear()
         redoTitles.clear()
         updateUndoRedoFlags()
     }
 
-    fun undo(state: RichTextState) {
+    /** Internal hook that pushes an explicit pre-edit state onto the stack. */
+    private fun snapshotForUndo(preHtml: String, preTitle: String) {
+        if (undoStack.size >= 50) undoStack.removeFirst()
+        if (undoTitles.size >= 50) undoTitles.removeFirst()
+        undoStack.addLast(preHtml)
+        undoTitles.addLast(preTitle)
+        lastSnapshotHtml = preHtml
+        lastSnapshotTitle = preTitle
+        redoStack.clear()
+        redoTitles.clear()
+        updateUndoRedoFlags()
+    }
+
+    /**
+     * Undo the last captured edit. The RichTextState UI stays in sync via the
+     * contentHtml state observer in EditorScreen, so the state does not need
+     * to be passed in here (this also keeps the method unit-testable).
+     */
+    fun undo() {
         if (undoStack.isEmpty()) return
         redoStack.addLast(_contentHtml.value)
         redoTitles.addLast(_title.value)
@@ -198,13 +249,15 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
         val prevTitle = undoTitles.removeLast()
         _title.value = prevTitle
         _contentHtml.value = prev
-        state.setHtml(prev)
+        lastSnapshotHtml = prev
+        lastSnapshotTitle = prevTitle
         dirty = true
         markDirty()
         updateUndoRedoFlags()
     }
 
-    fun redo(state: RichTextState) {
+    /** Redo the previously undone edit. */
+    fun redo() {
         if (redoStack.isEmpty()) return
         undoStack.addLast(_contentHtml.value)
         undoTitles.addLast(_title.value)
@@ -212,7 +265,8 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
         val nextTitle = redoTitles.removeLast()
         _title.value = nextTitle
         _contentHtml.value = next
-        state.setHtml(next)
+        lastSnapshotHtml = next
+        lastSnapshotTitle = nextTitle
         dirty = true
         markDirty()
         updateUndoRedoFlags()

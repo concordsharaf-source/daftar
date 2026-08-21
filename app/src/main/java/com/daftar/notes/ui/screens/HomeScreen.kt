@@ -35,6 +35,9 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -80,6 +83,13 @@ import com.daftar.notes.util.BackupManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private fun sortLabel(mode: String): String = when (mode) {
+    "oldest" -> "الأقدم"
+    "alpha" -> "أبجدي (A-Z)"
+    "alphaAr" -> "أبجدي عربي"
+    else -> "الأحدث"
+}
 
 /** Compact wrapper around a note + its optional thumbnail path. */
 private data class NoteRow(val note: Note, val thumbnailPath: String?) {
@@ -172,15 +182,20 @@ fun HomeScreen(
                 }
             }
 
-            // Search bar (results shown only while active/expanded)
+            // Sort selector (requirement #10: newest / oldest / A-Z / Arabic A-Z)
             var input by remember { mutableStateOf("") }
             var active by remember { mutableStateOf(false) }
+            val sortMode by viewModel.sortMode.collectAsState()
             SearchBar(
                 query = input,
-                onQueryChange = { input = it; if (!it.isNotBlank()) { active = false; viewModel.search("") } },
+                onQueryChange = { query ->
+                    input = query
+                    viewModel.search(query)
+                    if (query.isNotBlank()) active = true else { active = false; viewModel.search("") }
+                },
                 onSearch = { /* user pressed search — results stay visible while active */ },
                 active = active,
-                onActiveChange = { active = it; if (!it && input.isBlank()) viewModel.search("") },
+                onActiveChange = { active = it; if (!it) viewModel.search("") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp),
@@ -194,7 +209,7 @@ fun HomeScreen(
                     }
                 },
                 shape = RoundedCornerShape(24.dp)
-            ) {
+            )             {
                 val results = notes.filter {
                     it.title.contains(input, ignoreCase = true) ||
                         com.daftar.notes.util.TextUtils.stripHtml(it.contentHtml).contains(input, ignoreCase = true)
@@ -208,6 +223,61 @@ fun HomeScreen(
                                 onClick = {
                                     active = false
                                     onOpenNote(row.note.id)
+                                }
+                            )
+                        }
+                    }
+                                }
+            }
+
+            // Sort selector row (newest / oldest / A-Z / Arabic A-Z)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "الترتيب:",
+                    fontFamily = DaftarFonts.Cairo,
+                    fontSize = 12.sp,
+                    color = colors.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                var sortExpanded by remember { mutableStateOf(false) }
+                Box {
+                    TextButton(
+                        onClick = { sortExpanded = true },
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text(
+                            text = sortLabel(sortMode),
+                            fontFamily = DaftarFonts.Cairo,
+                            fontSize = 12.sp
+                        )
+                        Icon(
+                            Icons.Filled.KeyboardArrowDown,
+                            contentDescription = "خيارات الترتيب",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = sortExpanded,
+                        onDismissRequest = { sortExpanded = false }
+                    ) {
+                        listOf("newest" to "الأحدث", "oldest" to "الأقدم", "alpha" to "أبجدي (A-Z)", "alphaAr" to "أبجدي عربي").forEach { (mode, label) ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(label, fontFamily = DaftarFonts.Cairo, fontSize = 13.sp)
+                                },
+                                onClick = {
+                                    sortExpanded = false
+                                    scope.launch { viewModel.setSortMode(mode) }
+                                },
+                                trailingIcon = {
+                                    if (sortMode == mode) {
+                                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    }
                                 }
                             )
                         }

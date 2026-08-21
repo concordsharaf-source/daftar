@@ -25,12 +25,15 @@ import androidx.compose.ui.unit.dp
  * @param lineHeightPx vertical step between ruled lines (matches text line height)
  * @param contentPadding horizontal padding inside which the lines are drawn
  * @param margin Dp width of the visual page margin (lines stop before it)
+ * @param titleHeightPx optional height (in px) of the page title area; lines
+ *        are drawn BELOW it, so ruled lines never appear under the title
  */
 @Composable
 fun PaperBackground(
     lineHeightPx: Float,
     contentPadding: Dp = 20.dp,
     margin: Dp = 20.dp,
+    titleHeightPx: Float = 0f,
     content: @Composable () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -45,6 +48,7 @@ fun PaperBackground(
                 lineColor = lineColor,
                 marginPx = margin.toPx(),
                 contentPaddingPx = contentPadding.toPx(),
+                titleHeightPx = titleHeightPx,
                 totalHeight = size.height
             )
         }
@@ -63,6 +67,7 @@ private fun DrawScope.drawPaperBackground(
     lineColor: Color,
     marginPx: Float,
     contentPaddingPx: Float,
+    titleHeightPx: Float,
     totalHeight: Float
 ) {
     // Red margin line on the right side (RTL notebook margin)
@@ -76,8 +81,14 @@ private fun DrawScope.drawPaperBackground(
 
     val startX = contentPaddingPx
     val endX = size.width - contentPaddingPx
-    // First ruled line starts one line-height below the top
-    var y = lineHeightPx * 2f
+    // First ruled line starts in the writing area: below the title block,
+    // aligned to the first text baseline, so lines never appear under the
+    // page title or above the writing region.
+    val bodyStart = (titleHeightPx.coerceAtLeast(lineHeightPx * 1.5f) + lineHeightPx).let { first ->
+        // snap to the line-height grid
+        first + (lineHeightPx - first % lineHeightPx) % lineHeightPx
+    }
+    var y = bodyStart
     while (y < totalHeight) {
         drawLine(
             color = lineColor,
