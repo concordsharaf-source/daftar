@@ -14,8 +14,8 @@ android {
         applicationId = "com.daftar.notes"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 5
+        versionName = "2.5"
     }
 
     buildTypes {
