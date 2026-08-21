@@ -81,6 +81,8 @@ fun SettingsScreen(
     val relockMinutes by settings.relockDelayMinutes.collectAsState(initial = 5)
 
     var showFontPicker by remember { mutableStateOf(false) }
+    var showModeDialog by remember { mutableStateOf(false) }
+    var showRelockDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -112,16 +114,7 @@ fun SettingsScreen(
                     icon = Icons.Default.DarkMode,
                     title = "المظهر",
                     subtitle = modeLabel(darkMode),
-                    onClick = { },
-                    trailing = {
-                        ModePickerDialog(
-                            current = darkMode,
-                            onDismiss = { },
-                            onChoose = { mode ->
-                                scope.launch { settings.setDarkMode(mode) }
-                            }
-                        )
-                    }
+                    onClick = { showModeDialog = true }
                 )
             }
             SettingsCard {
@@ -171,16 +164,9 @@ fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.Timer,
                             title = "قفل تلقائي بعد",
-                            subtitle = relockLabel(relockMinutes)
-                        ) {
-                            RelockDelayDialog(
-                                current = relockMinutes,
-                                onDismiss = { },
-                                onChoose = { minutes ->
-                                    scope.launch { settings.setRelockDelayMinutes(minutes) }
-                                }
-                            )
-                        }
+                            subtitle = relockLabel(relockMinutes),
+                            onClick = { showRelockDialog = true }
+                        )
                     }
                 }
             }
@@ -263,6 +249,31 @@ fun SettingsScreen(
             }
         )
     }
+
+    // Appearance (dark/light/system) dialog
+    if (showModeDialog) {
+        ModePickerDialog(
+            current = darkMode,
+            onDismiss = { showModeDialog = false },
+            onChoose = { mode ->
+                scope.launch { settings.setDarkMode(mode) }
+                showModeDialog = false
+            }
+        )
+    }
+
+    // Auto-relock delay dialog
+    if (showRelockDialog) {
+        RelockDelayDialog(
+            current = relockMinutes,
+            onDismiss = { showRelockDialog = false },
+            onChoose = { minutes ->
+                scope.launch { settings.setRelockDelayMinutes(minutes) }
+                showRelockDialog = false
+            }
+        )
+    }
+
 }
 
 @Composable

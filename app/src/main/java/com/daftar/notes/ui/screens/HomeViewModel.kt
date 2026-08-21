@@ -51,6 +51,7 @@ class HomeViewModel(private val repo: NotesRepository) : ViewModel() {
     suspend fun toggleFavorite(id: Long, fav: Boolean) = repo.updateFavorite(id, fav)
     suspend fun togglePinned(id: Long, pinned: Boolean) = repo.updatePinned(id, pinned)
     suspend fun updateColor(id: Long, color: String?) = repo.updateColor(id, color)
+    suspend fun updateStatus(id: Long, status: String) = repo.updateStatus(id, status)
     suspend fun moveToFolder(id: Long, folderId: Long?) = repo.moveNoteToFolder(id, folderId)
     suspend fun softDelete(id: Long) = repo.softDelete(id)
     suspend fun restoreNote(id: Long) = repo.restoreNote(id)

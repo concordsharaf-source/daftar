@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RestoreFromTrash
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -223,12 +226,19 @@ fun HomeScreen(
                         )
                         NoteOverflowMenu(
                             noteId = row.note.id,
+                            noteTitle = row.note.title,
+                            noteStatus = row.note.status ?: "draft",
+                            noteContentText = com.daftar.notes.util.TextUtils.stripHtml(row.note.contentHtml),
                             expanded = expandedNoteId == row.note.id,
                             onDismiss = { expandedNoteId = null },
                             onPin = { scope.launch { viewModel.togglePinned(row.note.id, false) } },
                             onFavorite = { scope.launch { viewModel.toggleFavorite(row.note.id, !row.note.isFavorite) } },
                             isFavorite = row.note.isFavorite,
                             onColor = { colorTarget = row.note },
+                            onToggleStatus = {
+                                val newStatus = if (row.note.status == "done") "draft" else "done"
+                                scope.launch { viewModel.updateStatus(row.note.id, newStatus) }
+                            },
                             onDelete = { deleteTarget = row.note }
                         )
                     }
@@ -251,12 +261,19 @@ fun HomeScreen(
                     )
                     NoteOverflowMenu(
                         noteId = row.note.id,
+                        noteTitle = row.note.title,
+                        noteStatus = row.note.status ?: "draft",
+                        noteContentText = com.daftar.notes.util.TextUtils.stripHtml(row.note.contentHtml),
                         expanded = expandedNoteId == row.note.id,
                         onDismiss = { expandedNoteId = null },
                         onPin = { scope.launch { viewModel.togglePinned(row.note.id, true) } },
                         onFavorite = { scope.launch { viewModel.toggleFavorite(row.note.id, !row.note.isFavorite) } },
                         isFavorite = row.note.isFavorite,
                         onColor = { colorTarget = row.note },
+                        onToggleStatus = {
+                            val newStatus = if (row.note.status == "done") "draft" else "done"
+                            scope.launch { viewModel.updateStatus(row.note.id, newStatus) }
+                        },
                         onDelete = { deleteTarget = row.note }
                     )
                 }
@@ -594,26 +611,56 @@ private fun SearchResultItem(row: NoteRow, query: String, onClick: () -> Unit) {
             .background(colors.surface)
             .padding(14.dp)
     ) {
+        val annotatedTitle = remember(row.note.id, query) {
+            highlightQuery(row.note.title.ifBlank { "بدون عنوان" }, query)
+        }
         Text(
-            text = row.note.title.ifBlank { "بدون عنوان" },
+            text = annotatedTitle,
             fontFamily = DaftarFonts.Cairo,
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
             color = colors.onSurface
         )
-        val snippet = com.daftar.notes.util.TextUtils.extractSearchSnippet(
-            com.daftar.notes.util.TextUtils.stripHtml(row.note.contentHtml),
-            query
-        )
+        val plainText = com.daftar.notes.util.TextUtils.stripHtml(row.note.contentHtml)
+        val snippet = com.daftar.notes.util.TextUtils.extractSearchSnippet(plainText, query)
         if (snippet.isNotBlank()) {
+            val annotatedSnippet = remember(row.note.id, query, snippet) {
+                highlightQuery(snippet, query)
+            }
             Text(
-                text = snippet,
+                text = annotatedSnippet,
                 fontFamily = DaftarFonts.Cairo,
                 fontSize = 13.sp,
                 color = colors.onSurfaceVariant,
                 maxLines = 3,
                 modifier = Modifier.padding(top = 3.dp)
             )
+        }
+    }
+}
+
+/** Paint every occurrence of the search query with a tinted background. */
+private fun highlightQuery(text: String, query: String): androidx.compose.ui.text.AnnotatedString {
+    if (query.isBlank()) return androidx.compose.ui.text.AnnotatedString(text)
+    val needle = query.trim().lowercase()
+    if (needle.isEmpty()) return androidx.compose.ui.text.AnnotatedString(text)
+    val lower = text.lowercase()
+    return androidx.compose.ui.text.buildAnnotatedString {
+        append(text)
+        var start = 0
+        while (true) {
+            val idx = lower.indexOf(needle, start)
+            if (idx < 0) break
+            addStyle(
+                style = androidx.compose.ui.text.SpanStyle(
+                    background = androidx.compose.ui.graphics.Color(0xFFFFF176),
+                    color = androidx.compose.ui.graphics.Color.Black,
+                    fontWeight = FontWeight.Bold
+                ),
+                start = idx,
+                end = idx + needle.length
+            )
+            start = idx + needle.length
         }
     }
 }
@@ -684,15 +731,20 @@ private fun SectionHeader(title: String, count: Int) {
 @Composable
 private fun NoteOverflowMenu(
     noteId: Long,
+    noteTitle: String,
+    noteStatus: String,
+    noteContentText: String,
     expanded: Boolean,
     onDismiss: () -> Unit,
     onPin: () -> Unit,
     onFavorite: () -> Unit,
     isFavorite: Boolean,
     onColor: () -> Unit,
+    onToggleStatus: () -> Unit,
     onDelete: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
             text = { Text("تثبيت / إلغاء التثبيت", fontFamily = DaftarFonts.Cairo) },
@@ -708,6 +760,29 @@ private fun NoteOverflowMenu(
             text = { Text("تغيير اللون", fontFamily = DaftarFonts.Cairo) },
             onClick = { onColor(); onDismiss() },
             leadingIcon = { Icon(Icons.Default.ColorLens, contentDescription = null) }
+        )
+        DropdownMenuItem(
+            text = {
+                Text(
+                    if (noteStatus == "done") "إعادة إلى المسودة" else "تحديد كمنجز",
+                    fontFamily = DaftarFonts.Cairo
+                )
+            },
+            onClick = { onToggleStatus(); onDismiss() },
+            leadingIcon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = colors.primary) }
+        )
+        DropdownMenuItem(
+            text = { Text("مشاركة", fontFamily = DaftarFonts.Cairo) },
+            onClick = {
+                onDismiss()
+                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, "$noteTitle\n\n$noteContentText")
+                    if (noteTitle.isNotBlank()) putExtra(android.content.Intent.EXTRA_SUBJECT, noteTitle)
+                }
+                context.startActivity(android.content.Intent.createChooser(intent, "مشاركة الملاحظة"))
+            },
+            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
         )
         HorizontalDivider()
         DropdownMenuItem(

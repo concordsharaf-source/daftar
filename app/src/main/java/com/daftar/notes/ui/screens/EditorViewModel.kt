@@ -45,10 +45,28 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
     private val _saveStatus = MutableStateFlow("idle")
     val saveStatus: StateFlow<String> = _saveStatus.asStateFlow()
 
+    /** Note metadata (synced with the database row) so the editor
+     *  UI stays in sync with what the home screen shows. */
+    private val _notePinned = MutableStateFlow(false)
+    val notePinned: StateFlow<Boolean> = _notePinned.asStateFlow()
+
+    private val _noteFavorite = MutableStateFlow(false)
+    val noteFavorite: StateFlow<Boolean> = _noteFavorite.asStateFlow()
+
+    private val _noteColor = MutableStateFlow<String?>(null)
+    val noteColor: StateFlow<String?> = _noteColor.asStateFlow()
+
+    private val _noteStatus = MutableStateFlow("draft")
+    val noteStatus: StateFlow<String> = _noteStatus.asStateFlow()
+
     private var dirty = false
     private var lastSavedHtml: String = ""
     private var lastSavedTitle: String = ""
     private var saveJob: Job? = null
+    private var statusJob: Job? = null
+    private var colorJob: Job? = null
+    private var pinJob: Job? = null
+    private var favoriteJob: Job? = null
 
     private val undoStack = ArrayDeque<String>()
     private val redoStack = ArrayDeque<String>()
@@ -67,8 +85,21 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
             _contentHtml.value = html
             lastSavedHtml = html
             lastSavedTitle = note.title
+            _notePinned.value = note.isPinned
+            _noteFavorite.value = note.isFavorite
+            _noteColor.value = note.colorLabel
+            _noteStatus.value = note.status ?: "draft"
             dirty = false
             refreshImages()
+        }
+    }
+
+    /** Auto-hide the "saved" chip so it stays quiet after a save. */
+    private fun scheduleStatusIdle() {
+        statusJob?.cancel()
+        statusJob = viewModelScope.launch {
+            delay(2500)
+            _saveStatus.value = "idle"
         }
     }
 
@@ -90,6 +121,7 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
         saveJob = viewModelScope.launch {
             delay(750) // debounce DB writes
             flushSave()
+            scheduleStatusIdle()
         }
     }
 
@@ -119,6 +151,11 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
             e.printStackTrace()
             _saveStatus.value = "idle"
         }
+    }
+
+    /** Fire-and-forget flush for lifecycle-driven saves (screen stop/destroy). */
+    fun flushSaveAsync() {
+        viewModelScope.launch { saveNow() }
     }
 
     fun refreshImages() {
@@ -186,8 +223,55 @@ class EditorViewModel(private val repo: NotesRepository) : ViewModel() {
         _canRedo.value = redoStack.isNotEmpty()
     }
 
-    suspend fun toggleFavorite(fav: Boolean) = repo.updateFavorite(noteId, fav)
-    suspend fun togglePinned(pinned: Boolean) = repo.updatePinned(noteId, pinned)
-    suspend fun updateColor(color: String?) = repo.updateColor(noteId, color)
-    suspend fun updateStatus(status: String) = repo.updateStatus(noteId, status)
+    fun toggleFavorite(fav: Boolean) {
+        _noteFavorite.value = fav
+        favoriteJob?.cancel()
+        favoriteJob = viewModelScope.launch {
+            try {
+                repo.updateFavorite(noteId, fav)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                // fall back to the pre-change value on failure
+                _noteFavorite.value = !fav
+            }
+        }
+    }
+
+    fun togglePinned(pinned: Boolean) {
+        _notePinned.value = pinned
+        pinJob?.cancel()
+        pinJob = viewModelScope.launch {
+            try {
+                repo.updatePinned(noteId, pinned)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _notePinned.value = !pinned
+            }
+        }
+    }
+
+    fun updateColor(color: String?) {
+        _noteColor.value = color
+        colorJob?.cancel()
+        colorJob = viewModelScope.launch {
+            try {
+                repo.updateColor(noteId, color)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _noteColor.value = if (color == null) "#000000" else null
+            }
+        }
+    }
+
+    fun updateStatus(status: String) {
+        _noteStatus.value = status
+        val id = noteId
+        viewModelScope.launch {
+            try {
+                repo.updateStatus(id, status)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 }

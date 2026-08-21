@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.daftar.notes.ui.theme.DaftarFonts
+import com.daftar.notes.util.SettingsStore
 
 /**
  * Lock gate shown before the app content. Supports PIN + biometric unlock.
@@ -53,15 +55,17 @@ fun AppLockGate(
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
+    val settings = remember { SettingsStore(context.applicationContext) }
+    val biometricEnabled by settings.biometricEnabled.collectAsState(initial = false)
 
     var pinInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (PinStore.hasPin(context)) {
-            // Offer biometric first if enabled and hardware present
+            // Offer biometric first only if the user enabled it in settings
             val activity = context as? FragmentActivity
-            if (activity != null && isBiometricAvailable(context)) {
+            if (biometricEnabled && activity != null && isBiometricAvailable(context)) {
                 showBiometricPrompt(activity, context) { success ->
                     if (success) onUnlocked()
                 }
@@ -149,7 +153,7 @@ fun AppLockGate(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        if (isBiometricAvailable(context) && hasPin) {
+        if (biometricEnabled && isBiometricAvailable(context) && hasPin) {
             IconButton(onClick = {
                 val activity = context as? FragmentActivity
                 if (activity != null) {

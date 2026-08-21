@@ -26,15 +26,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FormatShapes
+import androidx.compose.material.icons.filled.FormatColorFill
+import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatColorText
+import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Photo
@@ -79,6 +86,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.daftar.notes.ui.components.NoteColorPalette
 import com.daftar.notes.ui.components.PaperBackground
 import com.daftar.notes.ui.theme.DaftarFonts
 import com.mohamedrejeb.richeditor.model.RichTextState
@@ -144,6 +152,10 @@ fun EditorScreen(
     val canUndo by viewModel.canUndo.collectAsState()
     val canRedo by viewModel.canRedo.collectAsState()
     val saveStatus by viewModel.saveStatus.collectAsState()
+    val isPinned by viewModel.notePinned.collectAsState()
+    val isFavorite by viewModel.noteFavorite.collectAsState()
+    val noteColor by viewModel.noteColor.collectAsState()
+    val noteStatus by viewModel.noteStatus.collectAsState()
 
     val colors = MaterialTheme.colorScheme
 
@@ -243,8 +255,9 @@ fun EditorScreen(
     // Formatting toolbar state
     var showColorPicker by remember { mutableStateOf(false) }
     var showHighlightPicker by remember { mutableStateOf(false) }
-    var isFavorite by remember { mutableStateOf(false) }
-    var isPinned by remember { mutableStateOf(false) }
+    var showLabelColorPicker by remember { mutableStateOf(false) }
+    var unorderedListActive by remember { mutableStateOf(false) }
+    var orderedListActive by remember { mutableStateOf(false) }
 
     // Gallery launcher
     val pickMediaLauncher = rememberLauncherForActivityResult(
@@ -457,7 +470,7 @@ fun EditorScreen(
                     ) {
 
                         Icon(
-                            Icons.Default.Photo,
+                            Icons.Default.MoreVert,
                             contentDescription = "المزيد"
                         )
                     }
@@ -478,6 +491,8 @@ fun EditorScreen(
 
                 showColorPicker = showColorPicker,
                 showHighlightPicker = showHighlightPicker,
+                isUnorderedListActive = unorderedListActive,
+                isOrderedListActive = orderedListActive,
 
                 onToggleBold = {
                     viewModel.snapshotForUndo()
@@ -529,11 +544,15 @@ fun EditorScreen(
                 onBulletList = {
                     viewModel.snapshotForUndo()
                     richState.toggleUnorderedList()
+                    unorderedListActive = !unorderedListActive
+                    if (unorderedListActive) orderedListActive = false
                 },
 
                 onNumberedList = {
                     viewModel.snapshotForUndo()
                     richState.toggleOrderedList()
+                    orderedListActive = !orderedListActive
+                    if (orderedListActive) unorderedListActive = false
                 },
 
                 onToggleHighlightPicker = {
@@ -1022,16 +1041,7 @@ fun EditorScreen(
 
                 showMoreMenu = false
 
-                viewModel.snapshotForUndo()
-
-                CoroutineScope(Dispatchers.IO).launch {
-
-                    viewModel.togglePinned(!isPinned)
-
-                    withContext(Dispatchers.Main) {
-                        isPinned = !isPinned
-                    }
-                }
+                viewModel.togglePinned(!isPinned)
             },
 
             leadingIcon = {
@@ -1067,18 +1077,7 @@ fun EditorScreen(
 
                 showMoreMenu = false
 
-                viewModel.snapshotForUndo()
-
-                CoroutineScope(Dispatchers.IO).launch {
-
-                    viewModel.toggleFavorite(
-                        !isFavorite
-                    )
-
-                    withContext(Dispatchers.Main) {
-                        isFavorite = !isFavorite
-                    }
-                }
+                viewModel.toggleFavorite(!isFavorite)
             },
 
             leadingIcon = {
@@ -1093,6 +1092,68 @@ fun EditorScreen(
                     tint =
                         if (isFavorite) {
                             Color(0xFFE53935)
+                        } else {
+                            colors.onSurfaceVariant
+                        }
+                )
+            }
+        )
+
+        DropdownMenuItem(
+
+            text = {
+                Text(
+                    "لون الملاحظة",
+                    fontFamily = DaftarFonts.Cairo
+                )
+            },
+
+            onClick = {
+
+                showMoreMenu = false
+                showLabelColorPicker = true
+            },
+
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Label,
+                    contentDescription = null,
+                    tint = colors.primary
+                )
+            }
+        )
+
+        DropdownMenuItem(
+
+            text = {
+
+                Text(
+                    if (noteStatus == "done") {
+                        "إعادة إلى المسودة"
+                    } else {
+                        "تحديد كمنجز"
+                    },
+                    fontFamily = DaftarFonts.Cairo
+                )
+            },
+
+            onClick = {
+
+                showMoreMenu = false
+
+                val newStatus =
+                    if (noteStatus == "done") "draft" else "done"
+
+                viewModel.updateStatus(newStatus)
+            },
+
+            leadingIcon = {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint =
+                        if (noteStatus == "done") {
+                            colors.primary
                         } else {
                             colors.onSurfaceVariant
                         }
@@ -1305,6 +1366,112 @@ fun EditorScreen(
         }
     }
 
+    // Note label color picker
+    if (showLabelColorPicker) {
+
+        Dialog(
+            onDismissRequest = {
+                showLabelColorPicker = false
+            }
+        ) {
+
+            Box(
+
+                modifier = Modifier
+                    .clip(
+                        RoundedCornerShape(20.dp)
+                    )
+                    .background(colors.surface)
+                    .padding(20.dp)
+            ) {
+
+                Column(
+                    verticalArrangement =
+                        Arrangement.spacedBy(12.dp)
+                ) {
+
+                    Text(
+                        text = "لون الملاحظة",
+                        fontFamily = fontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = colors.onSurface
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement =
+                            Arrangement.SpaceEvenly
+                    ) {
+
+                        NoteColorPalette.options.forEach { c ->
+
+                            val selected =
+                                noteColor != null &&
+                                    noteColor.equals(
+                                        NoteColorPalette.toHex(c),
+                                        ignoreCase = true
+                                    )
+
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .background(c)
+                                    .clickable {
+
+                                        showLabelColorPicker = false
+                                        viewModel.updateColor(
+                                            NoteColorPalette.toHex(c)
+                                        )
+                                    }
+                            ) {
+
+                                if (selected) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color.Black,
+                                        modifier = Modifier
+                                            .align(Alignment.Center)
+                                            .size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .background(
+                                    colors.surfaceVariant,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    showLabelColorPicker = false
+                                    viewModel.updateColor(null)
+                                }
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "بدون لون",
+                                tint = colors.onSurfaceVariant,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Full-screen image viewer
     fullScreenImage?.let { path ->
 
@@ -1391,6 +1558,8 @@ private fun FormattingToolbar(
     colors: androidx.compose.material3.ColorScheme,
     showColorPicker: Boolean,
     showHighlightPicker: Boolean,
+    isUnorderedListActive: Boolean,
+    isOrderedListActive: Boolean,
     onToggleBold: () -> Unit,
     onToggleItalic: () -> Unit,
     onToggleUnderline: () -> Unit,
@@ -1502,31 +1671,27 @@ private fun FormattingToolbar(
             ToolbarButton(
 
                 icon =
-                    Icons.Default.FormatColorText,
+                    Icons.Filled.FormatListBulleted,
 
-                label = "تعداد نقطي",
-
-                active = false,
-
+                                label = "تعداد نقطي",
+                active = isUnorderedListActive,
                 onClick = onBulletList
             )
 
             ToolbarButton(
 
                 icon =
-                    Icons.Default.FormatColorText,
+                    Icons.Filled.FormatListNumbered,
 
-                label = "تعداد مرقم",
-
-                active = false,
-
+                                label = "تعداد مرقم",
+                active = isOrderedListActive,
                 onClick = onNumberedList
             )
 
             ToolbarButton(
 
                 icon =
-                    Icons.Default.FormatColorText,
+                    Icons.Filled.FormatShapes,
 
                 label = "تمييز",
 
@@ -1539,7 +1704,7 @@ private fun FormattingToolbar(
             ToolbarButton(
 
                 icon =
-                    Icons.Default.FormatColorText,
+                    Icons.Default.FormatColorFill,
 
                 label = "لون",
 

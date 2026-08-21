@@ -67,7 +67,7 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE isDeleted = 1")
     suspend fun emptyTrash()
 
-    @Query("SELECT * FROM notes WHERE title LIKE '%' || :query || '%' OR contentHtml LIKE '%' || :query || '%' AND isDeleted = 0 ORDER BY isPinned DESC, updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE (title LIKE '%' || :query || '%' OR contentHtml LIKE '%' || :query || '%') AND isDeleted = 0 ORDER BY isPinned DESC, updatedAt DESC")
     fun searchNotes(query: String): Flow<List<Note>>
 
     @Query("UPDATE notes SET folderId = :folderId WHERE id = :id")
