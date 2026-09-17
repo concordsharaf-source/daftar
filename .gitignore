@@ -9,3 +9,5 @@ app/build/
 local.properties
 .kotlin/
 captures/
+
+# نسخة الويب: لا شيء يُستثنى (الخطوط والأيقونات مطلوبة للنشر على GitHub Pages)

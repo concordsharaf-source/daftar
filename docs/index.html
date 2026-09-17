@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light" data-font="cairo">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>دفتر — ملاحظات عربية</title>
+<meta name="description" content="دفتر: تطبيق ملاحظات عربي يعمل دون اتصال، بمحرر غني ونسخ احتياطي متوافق مع تطبيق أندرويد." />
+<meta name="theme-color" content="#0F4C75" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="دفتر" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<!-- ============ شاشة القائمة ============ -->
+<section id="screen-list" class="screen">
+  <header class="appbar">
+    <div class="brand">
+      <h1>دفتر</h1>
+      <span class="ver">v2.6</span>
+    </div>
+    <div class="actions">
+      <button id="btn-search" class="icon-btn" aria-label="بحث" title="بحث">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg>
+      </button>
+      <button id="btn-backup" class="icon-btn" aria-label="النسخ الاحتياطي" title="النسخ الاحتياطي">
+        <svg viewBox="0 0 24 24"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7zm-6 .67 2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z"/></svg>
+      </button>
+      <button id="btn-trash" class="icon-btn" aria-label="سلة المحذوفات" title="سلة المحذوفات">
+        <svg viewBox="0 0 24 24"><path d="M15 4V3H9v1H4v2h1v13c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V6h1V4zm3 15H6V6h12zM8 8h8v2H8zm0 4h8v2H8z"/></svg>
+      </button>
+      <button id="btn-settings" class="icon-btn" aria-label="الإعدادات" title="الإعدادات">
+        <svg viewBox="0 0 24 24"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98l-.38-2.65A.49.49 0 0 0 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.22.09.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="banner-storage" class="banner" hidden></div>
+
+  <div id="searchbar" class="searchbar" hidden>
+    <input id="search-input" type="search" inputmode="search" placeholder="ابحث في العنوان والمحتوى…" autocomplete="off" />
+  </div>
+
+  <div id="sortbar" class="sortbar"></div>
+
+  <main id="notes-list" class="notes"></main>
+
+  <button id="btn-new" class="fab" aria-label="ملاحظة جديدة" title="ملاحظة جديدة">
+    <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+  </button>
+</section>
+
+<!-- ============ شاشة المحرر ============ -->
+<section id="screen-editor" class="screen" hidden>
+  <header class="appbar editor-bar">
+    <button id="btn-back" class="icon-btn" aria-label="رجوع" title="رجوع">
+      <svg viewBox="0 0 24 24"><path d="M10 6 4 12l6 6v-4h10v-4H10z"/></svg>
+    </button>
+    <span id="save-status" class="status-chip"></span>
+    <div class="actions">
+      <button id="btn-undo" class="icon-btn" aria-label="تراجع" title="تراجع">
+        <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8"/></svg>
+      </button>
+      <button id="btn-redo" class="icon-btn" aria-label="إعادة" title="إعادة">
+        <svg viewBox="0 0 24 24"><path d="M18.4 10.6A8.9 8.9 0 0 0 12.5 8c-4.65 0-8.58 3.03-9.96 7.22L4.9 16c1.05-3.19 4.06-5.5 7.6-5.5 1.96 0 3.73.72 5.12 1.88L14 16h9V7z"/></svg>
+      </button>
+      <button id="btn-pin" class="icon-btn" aria-label="تثبيت" title="تثبيت">
+        <svg viewBox="0 0 24 24"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2z"/></svg>
+      </button>
+      <button id="btn-fav" class="icon-btn" aria-label="مفضلة" title="مفضلة">
+        <svg viewBox="0 0 24 24"><path d="m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+      </button>
+      <button id="btn-status" class="icon-btn" aria-label="منجزة" title="تحديد كمنجزة">
+        <svg viewBox="0 0 24 24"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+      </button>
+      <button id="btn-color" class="icon-btn color-btn" aria-label="لون الملاحظة" title="لون الملاحظة"><span class="dot"></span></button>
+      <button id="btn-more" class="icon-btn" aria-label="المزيد" title="المزيد">
+        <svg viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4m0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4m0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <input id="note-title" class="note-title" placeholder="العنوان" autocomplete="off" />
+
+  <div class="toolbar" id="toolbar">
+    <button data-cmd="bold" title="عريض (Ctrl+B)"><b>ب</b></button>
+    <button data-cmd="italic" title="مائل (Ctrl+I)"><i>م</i></button>
+    <button data-cmd="underline" title="تسطير (Ctrl+U)"><u>ت</u></button>
+    <button data-cmd="strikeThrough" title="يتوسطه خط"><s>خ</s></button>
+    <span class="sep"></span>
+    <button data-block="h1" title="عنوان رئيسي">H1</button>
+    <button data-block="h2" title="عنوان فرعي">H2</button>
+    <button data-block="p" title="نص عادي">¶</button>
+    <button data-block="blockquote" title="اقتباس">❝</button>
+    <span class="sep"></span>
+    <button data-cmd="insertUnorderedList" title="قائمة نقطية">•</button>
+    <button data-cmd="insertOrderedList" title="قائمة مرقّمة">1.</button>
+    <span class="sep"></span>
+    <button data-color="#B3261E" title="نص أحمر" style="color:#B3261E">أ</button>
+    <button data-color="#0F4C75" title="نص أزرق" style="color:#0F4C75">أ</button>
+    <button data-color="#2E7D32" title="نص أخضر" style="color:#2E7D32">أ</button>
+    <button data-highlight="#FFF176" title="تظليل أصفر" class="hl" style="--hl:#FFF176"><span>أ</span></button>
+    <button data-highlight="#A5D6A7" title="تظليل أخضر" class="hl" style="--hl:#A5D6A7"><span>أ</span></button>
+    <span class="sep"></span>
+    <button data-cmd="justifyRight" title="محاذاة يمين">⇥</button>
+    <button data-cmd="justifyCenter" title="توسيط">⇹</button>
+    <button data-cmd="removeFormat" title="إزالة التنسيق">✕</button>
+  </div>
+
+  <div id="editor" class="editor paper" contenteditable="true" dir="rtl" data-placeholder="اكتب ملاحظتك هنا…"></div>
+  <div id="editor-foot" class="editor-foot"></div>
+</section>
+
+<!-- ============ الأوراق والحوارات ============ -->
+<div class="sheet-backdrop" hidden></div>
+
+<div id="sheet-note" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body" id="menu-note"></div>
+</div>
+
+<div id="sheet-colors" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body">
+    <h3 class="sheet-title">لون الملاحظة</h3>
+    <div id="colors-grid" class="colors-grid"></div>
+  </div>
+</div>
+
+<div id="sheet-trash" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body">
+    <h3 class="sheet-title">سلة المحذوفات</h3>
+    <div id="trash-list"></div>
+  </div>
+</div>
+
+<div id="sheet-backup" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body">
+    <h3 class="sheet-title">النسخ الاحتياطي</h3>
+    <button id="btn-export-zip" class="sheet-row">
+      <span class="ico">🗄️</span>
+      <span class="lbl">حفظ نسخة كاملة (ZIP)<small>daftar.json + الصور — متوافقة مع تطبيق أندرويد</small></span>
+    </button>
+    <button id="btn-export-json" class="sheet-row">
+      <span class="ico">📄</span>
+      <span class="lbl">تصدير JSON فقط<small>الملاحظات بلا صور، للقراءة أو النقل السريع</small></span>
+    </button>
+    <label class="sheet-row" for="file-import">
+      <span class="ico">↩️</span>
+      <span class="lbl">استعادة من نسخة<small>ZIP أو JSON — تُضاف ولا تستبدل</small></span>
+    </label>
+    <input id="file-import" type="file" accept=".zip,.json,application/zip,application/json" hidden />
+    <p class="hint">ملفات النسخ متوافقة في الاتجاهين: نسخة صُنعت على الأندرويد تُستعاد هنا، والعكس.</p>
+  </div>
+</div>
+
+<div id="sheet-settings" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body">
+    <h3 class="sheet-title">الإعدادات</h3>
+
+    <h4 class="sheet-sub">المظهر</h4>
+    <div id="set-theme" class="chips"></div>
+
+    <h4 class="sheet-sub">الخط</h4>
+    <div id="set-font" class="chips column"></div>
+
+    <h4 class="sheet-sub">حجم خط الملاحظة</h4>
+    <div class="range-row">
+      <input id="set-font-size" type="range" min="14" max="28" step="1" />
+      <span id="set-font-size-value">18px</span>
+    </div>
+
+    <h4 class="sheet-sub">البيانات</h4>
+    <p class="muted" id="set-stats"></p>
+    <p class="muted" id="set-storage"></p>
+    <button id="btn-install" class="btn primary wide" hidden>تثبيت التطبيق على الجهاز</button>
+
+    <h4 class="sheet-sub">حول</h4>
+    <p class="muted">دفتر 2.6 — نسخة الويب (PWA). تعمل بلا اتصال، وبياناتك تبقى على جهازك. القفل بالرمز والبصمة في مرحلة تالية.</p>
+  </div>
+</div>
+
+<div id="dialog-confirm" class="dialog">
+  <div class="dialog-card">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-body"></p>
+    <div class="dialog-actions">
+      <button id="confirm-cancel" class="btn ghost">إلغاء</button>
+      <button id="confirm-ok" class="btn primary">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
