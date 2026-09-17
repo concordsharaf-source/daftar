@@ -11,3 +11,7 @@ local.properties
 captures/
 
 # نسخة الويب: لا شيء يُستثنى (الخطوط والأيقونات مطلوبة للنشر على GitHub Pages)
+
+# اختبارات المتصفح: لا نرفع اعتماديات ولا لقطات
+docs/tests/browser/node_modules/
+docs/tests/browser/screenshots/

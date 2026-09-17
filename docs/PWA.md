@@ -118,16 +118,23 @@ https://concordsharaf-source.github.io/daftar/
 ## الاختبارات
 
 ```bash
-# اختبارات الوحدة (Node، بلا متصفح): 21 اختبارًا — ZIP، العربية، التشفير، القفل
+# 1) اختبارات الوحدة (Node، بلا متصفح): 21 اختبارًا — ZIP، العربية، التشفير، القفل
 node --test docs/tests/
 
-# اختبار 1 في متصفح حقيقي (Chromium): 24 تحققًا — الأساسيات والعمل بلا اتصال
-# يتطلب: npm i playwright && npx playwright install chromium
-node e2e.mjs
+# 2) اختبارات المتصفح (Chromium حقيقي) — تحتاج تنصيبًا مرة واحدة فقط
+cd docs/tests/browser
+npm run setup                 # npm i + npx playwright install chromium
 
-# اختبار 2: 31 تحققًا — العدّاد، الأيقونات، زر ✕، وقفل التطبيق كاملًا
-node e2e2.mjs
+# شغّل خادمًا محليًا من الجذر في نافذة أخرى:
+#   python3 -m http.server 8000 --directory docs
+BASE_URL=http://localhost:8000/ npm run e2e      # 24 تحققًا: الأساسيات والعمل بلا اتصال
+BASE_URL=http://localhost:8000/ npm run stage2   # 34 تحققًا: العدّاد، ✕، وقفل التطبيق
+
+# ويمكن تشغيلها على الموقع المنشور مباشرة:
+BASE_URL=https://daftar-nine-lovat.vercel.app/ npm run stage2
 ```
+
+اللقطات تُحفظ في `docs/tests/browser/screenshots/` (أو في المجلد الذي تحدّده في `OUT_DIR`).
 
 يغطي اختبار المتصفح الأول: الإقلاع، إنشاء ملاحظة، الحفظ التلقائي، بقاء البيانات بعد إعادة
 التحميل، البحث، الترتيب، الوضع الليلي، تحميل الخطوط، تصدير ZIP، الاستيراد بعد محو
@@ -164,7 +171,10 @@ docs/
 │   └── util.js             تطبيع العربية، تجريد HTML، التواريخ، تنظيف HTML
 ├── fonts/                  نفس ملفات الخطوط العربية من التطبيق (9 ملفات)
 ├── icons/                  أيقونات التطبيق (SVG + PNG 192/512 + maskable)
-└── tests/web.test.mjs      اختبارات الوحدة
+└── tests/
+    ├── web.test.mjs        اختبارات الوحدة (ZIP/العربية/التواريخ)
+    ├── lock.test.mjs       اختبارات التشفير والقفل والترحيل
+    └── browser/            اختبارات Chromium الحقيقية (Playwright)
 ```
 
 ## ملاحظات وحدود

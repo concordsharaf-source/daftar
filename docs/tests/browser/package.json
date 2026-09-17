@@ -1,0 +1,14 @@
+{
+  "name": "daftar-browser-tests",
+  "private": true,
+  "type": "module",
+  "description": "اختبارات المتصفح لنسخة الويب من «دفتر» (Playwright + Chromium)",
+  "scripts": {
+    "setup": "npm i && npx playwright install chromium",
+    "e2e": "node e2e.mjs",
+    "stage2": "node e2e2.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}
