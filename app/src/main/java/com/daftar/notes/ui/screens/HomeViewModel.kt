@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -33,14 +34,37 @@ class HomeViewModel(private val repo: NotesRepository) : ViewModel() {
     val folders: StateFlow<List<com.daftar.notes.data.Folder>> = repo.getAllFolders()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val notes = combine(allNotes, searchQuery, sortMode) { notes, query, mode ->
-        val filtered = if (query.isBlank()) notes
-        else notes.filter { note ->
-            note.title.contains(query, ignoreCase = true) ||
-                com.daftar.notes.util.TextUtils.stripHtml(note.contentHtml).contains(query, ignoreCase = true)
+    /**
+     * نص الملاحظة المُجهَّز للبحث (HTML مُزال + أحرف صغيرة).
+     * يُحسب مرة واحدة لكل تغيير في قاعدة البيانات بدل حسابه عند كل ضغطة مفتاح
+     * (كان stripHtml يُنفَّذ على كل الملاحظات في كل حرف يكتبه المستخدم).
+     */
+    private data class IndexedNote(val note: Note, val searchText: String)
+
+    private val indexedNotes: StateFlow<List<IndexedNote>> = repo.getAllNotes()
+        .map { list ->
+            list.map { note ->
+                IndexedNote(
+                    note = note,
+                    searchText = com.daftar.notes.util.TextUtils.stripHtml(note.contentHtml).lowercase()
+                )
+            }
         }
-        sortNotes(filtered, mode)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val notes: StateFlow<List<Note>> =
+        combine(indexedNotes, searchQuery, sortMode) { indexed, query, mode ->
+            val needle = query.trim()
+            val filtered = if (needle.isBlank()) {
+                indexed.map { it.note }
+            } else {
+                val lower = needle.lowercase()
+                indexed
+                    .filter { it.note.title.contains(needle, ignoreCase = true) || it.searchText.contains(lower) }
+                    .map { it.note }
+            }
+            sortNotes(filtered, mode)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun search(q: String) { searchQuery.value = q }
 

@@ -23,7 +23,6 @@ class SettingsStore(private val context: Context) {
         val BIOMETRIC_ENABLED_KEY = booleanPreferencesKey("biometric_enabled")
         val RELOCK_DELAY_KEY = intPreferencesKey("relock_delay") // minutes
         val LAST_UNLOCK_TIME_KEY = longPreferencesKey("last_unlock_time")
-        val LAST_LOCK_STATE_TIME_KEY = longPreferencesKey("last_lock_state_time")
     }
 
     val fontKey: Flow<String> = context.dataStore.data.map { it[FONT_KEY] ?: "" }
@@ -32,7 +31,6 @@ class SettingsStore(private val context: Context) {
     val biometricEnabled: Flow<Boolean> = context.dataStore.data.map { it[BIOMETRIC_ENABLED_KEY] ?: false }
     val relockDelayMinutes: Flow<Int> = context.dataStore.data.map { it[RELOCK_DELAY_KEY] ?: 5 }
     val lastUnlockTime: Flow<Long> = context.dataStore.data.map { it[LAST_UNLOCK_TIME_KEY] ?: 0L }
-    val lastLockStateTime: Flow<Long> = context.dataStore.data.map { it[LAST_LOCK_STATE_TIME_KEY] ?: 0L }
 
     suspend fun setFontKey(key: String) {
         context.dataStore.edit { it[FONT_KEY] = key }
@@ -56,9 +54,5 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setLastUnlockTime(millis: Long) {
         context.dataStore.edit { it[LAST_UNLOCK_TIME_KEY] = millis }
-    }
-
-    suspend fun setLastLockStateTime(millis: Long) {
-        context.dataStore.edit { it[LAST_LOCK_STATE_TIME_KEY] = millis }
     }
 }

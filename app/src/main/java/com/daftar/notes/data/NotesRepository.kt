@@ -1,13 +1,20 @@
 package com.daftar.notes.data
 
-import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class NotesRepository(private val dao: NoteDao) {
-    val appContext: Context get() = com.daftar.notes.app.AppContainer.get().appContext
+class NotesRepository(
+    private val dao: NoteDao,
+    /** إدارة ملفات الصور. تُمرَّر من AppContainer، وتبقى اختيارية للاختبارات. */
+    private val files: NoteFileStore? = null
+) {
+    private fun requireFiles(): NoteFileStore =
+        files ?: throw IllegalStateException("NoteFileStore غير مُهيّأ")
+
+    /** هل الصور مدعومة في هذه البيئة؟ (اختبارات الوحدة: لا) */
+    val imagesSupported: Boolean get() = files != null
 
     fun getAllNotes(): Flow<List<Note>> = dao.getAllNotes()
     suspend fun getAllNotesOnce(): List<Note> = dao.getAllNotesOnce()
@@ -16,7 +23,6 @@ class NotesRepository(private val dao: NoteDao) {
     fun getNotesByFolder(folderId: Long): Flow<List<Note>> = dao.getNotesByFolder(folderId)
     fun getNoteById(id: Long): Flow<Note?> = dao.getNoteById(id)
     suspend fun getNoteByIdOnce(id: Long): Note? = dao.getNoteByIdOnce(id)
-    fun searchNotes(query: String): Flow<List<Note>> = dao.searchNotes(query)
 
     suspend fun insertNote(note: Note): Long = dao.insert(note)
     suspend fun updateNote(note: Note) = dao.update(note)
@@ -37,7 +43,7 @@ class NotesRepository(private val dao: NoteDao) {
         dao.deleteImagesForNote(id)
         dao.permanentDelete(id)
         images.forEach { img -> runCatching { File(img.filePath).delete() } }
-        runCatching { getNoteImagesDir(id).deleteRecursively() }
+        files?.deleteNoteFiles(id)
     }
 
     /** إفراغ السلة: يحذف الملاحظات المحذوفة نهائيًا مع صورها. */
@@ -47,22 +53,15 @@ class NotesRepository(private val dao: NoteDao) {
         doomed.forEach { note -> dao.deleteImagesForNote(note.id) }
         dao.emptyTrash()
         images.forEach { img -> runCatching { File(img.filePath).delete() } }
-        doomed.forEach { note -> runCatching { getNoteImagesDir(note.id).deleteRecursively() } }
+        doomed.forEach { note -> files?.deleteNoteFiles(note.id) }
     }
 
     /** حذف كل ملفات الصور التي لا تخص أي ملاحظة موجودة (صيانة). */
     suspend fun cleanupOrphanImages(): Int = withContext(Dispatchers.IO) {
-        val root = File(appContext.getDir("notes", Context.MODE_PRIVATE), "")
-        if (!root.exists()) return@withContext 0
-        val liveIds = dao.getAllNotesOnce().map { it.id }.toSet() +
-            dao.getDeletedNotesOnce().map { it.id }.toSet()
+        val store = files ?: return@withContext 0
+        val liveIds = (dao.getAllNotesOnce().map { it.id } + dao.getDeletedNotesOnce().map { it.id }).toSet()
         var removed = 0
-        root.listFiles()?.forEach { dir ->
-            val id = dir.name.toLongOrNull()
-            if (id != null && id !in liveIds) {
-                if (dir.deleteRecursively()) removed++
-            }
-        }
+        store.orphanNoteDirs(liveIds).forEach { dir -> if (dir.deleteRecursively()) removed++ }
         removed
     }
     suspend fun moveNoteToFolder(id: Long, folderId: Long?) = dao.moveNoteToFolder(id, folderId)
@@ -77,9 +76,7 @@ class NotesRepository(private val dao: NoteDao) {
     /** Copy a selected image into the app's private storage and register it. */
     suspend fun addImage(noteId: Long, source: File) = withContext(Dispatchers.IO) {
         // مهم: مسار مطلق داخل التخزين الخاص للتطبيق (كان نسبيًا فلا تنجح الكتابة)
-        val dir = File(getNoteImagesDir(noteId).absolutePath).apply { mkdirs() }
-        val dest = File(dir, "img_${System.currentTimeMillis()}_${source.nameWithoutExtension}.jpg")
-        source.inputStream().use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
+        val dest = requireFiles().copyInto(noteId, source)
         val maxOrder = (dao.getImagesOnce(noteId).maxOfOrNull { it.order } ?: -1) + 1
         dao.insertImage(NoteImage(noteId = noteId, filePath = dest.absolutePath, order = maxOrder))
         dest.absolutePath
@@ -92,6 +89,4 @@ class NotesRepository(private val dao: NoteDao) {
         img?.let { File(it.filePath).delete() }
     }
 
-    fun getNoteImagesDir(noteId: Long): File =
-        File(com.daftar.notes.app.AppContainer.get().appContext.getDir("notes", Context.MODE_PRIVATE), "$noteId/images")
 }

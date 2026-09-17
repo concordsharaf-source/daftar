@@ -100,42 +100,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Palette of highlight and text colors for the formatting toolbar. */
-private val HIGHLIGHT_COLORS = listOf(
-    Color(0xFFFFF176),
-    Color(0xFFFFCC80),
-    Color(0xFFA5D6A7),
-    Color(0xFF90CAF9),
-    Color(0xFFFFB3BA),
-    Color(0xFFD1C4E9)
-)
-
-private val TEXT_COLORS = listOf(
-    Color(0xFF000000),
-    Color(0xFFE53935),
-    Color(0xFF1E88E5),
-    Color(0xFF2E7D32),
-    Color(0xFF6A1B9A),
-    Color(0xFFEF6C00)
-)
-
-private fun toHex(color: Color): String =
-    String.format(
-        "#%02X%02X%02X",
-        color.redInt(),
-        color.greenInt(),
-        color.blueInt()
-    )
-
-private fun Color.redInt(): Int =
-    (red * 255).toInt().coerceIn(0, 255)
-
-private fun Color.greenInt(): Int =
-    (green * 255).toInt().coerceIn(0, 255)
-
-private fun Color.blueInt(): Int =
-    (blue * 255).toInt().coerceIn(0, 255)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
@@ -321,6 +285,19 @@ fun EditorScreen(
                     }
                 }
             }
+        }
+    }
+
+    // إذن الكاميرا: التطبيق يعلن CAMERA في المانيفست، لذا يلزم الإذن وقت التشغيل
+    // وإلا يفشل إطلاق الكاميرا (SecurityException) بلا أي رسالة واضحة.
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            appLockManager.beginExternalFlow()
+            takePhotoLauncher.launch(null)
+        } else {
+            Toast.makeText(context, "التقاط الصور يحتاج إذن الكاميرا", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1369,8 +1346,16 @@ fun EditorScreen(
 
                                 showImagePicker = false
 
-                                appLockManager.beginExternalFlow()
-                                takePhotoLauncher.launch(null)
+                                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                        context,
+                                        android.Manifest.permission.CAMERA
+                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    appLockManager.beginExternalFlow()
+                                    takePhotoLauncher.launch(null)
+                                } else {
+                                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                }
                             }
                         )
                     }
@@ -1529,338 +1514,3 @@ fun EditorScreen(
 }
 
 /** Apply heading span style: null = normal. */
-private fun applyHeading(
-    state: RichTextState,
-    fontSizeSp: Int?
-) {
-
-    val h1 =
-        androidx.compose.ui.text.SpanStyle(
-            fontWeight = FontWeight.Bold,
-            fontSize = 26.sp
-        )
-
-    val h2 =
-        androidx.compose.ui.text.SpanStyle(
-            fontWeight = FontWeight.Bold,
-            fontSize = 22.sp
-        )
-
-    if (fontSizeSp == null) {
-
-        state.removeSpanStyle(h1)
-        state.removeSpanStyle(h2)
-
-    } else if (fontSizeSp == 26) {
-
-        state.removeSpanStyle(h2)
-        state.toggleSpanStyle(h1)
-
-    } else {
-
-        state.removeSpanStyle(h1)
-        state.toggleSpanStyle(h2)
-    }
-}
-
-/** Compact format toolbar. */
-@Composable
-private fun FormattingToolbar(
-    richState: RichTextState,
-    fontFamily: FontFamily,
-    colors: androidx.compose.material3.ColorScheme,
-    showColorPicker: Boolean,
-    showHighlightPicker: Boolean,
-    isUnorderedListActive: Boolean,
-    isOrderedListActive: Boolean,
-    onToggleBold: () -> Unit,
-    onToggleItalic: () -> Unit,
-    onToggleUnderline: () -> Unit,
-    onHeading1: () -> Unit,
-    onHeading2: () -> Unit,
-    onNormal: () -> Unit,
-    onBulletList: () -> Unit,
-    onNumberedList: () -> Unit,
-    onToggleHighlightPicker: () -> Unit,
-    onApplyHighlight: (String) -> Unit,
-    onToggleColorPicker: () -> Unit,
-    onApplyColor: (String) -> Unit
-) {
-
-    val currentSpan =
-        richState.currentSpanStyle
-
-    Box(
-
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                colors.surface.copy(alpha = 0.92f)
-            )
-            .padding(
-                vertical = 3.dp,
-                horizontal = 4.dp
-            )
-    ) {
-
-        Row(
-
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(
-                    rememberScrollState()
-                ),
-
-            horizontalArrangement =
-                Arrangement.spacedBy(1.dp),
-
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            ToolbarButton(
-
-                icon = Icons.Default.FormatBold,
-
-                label = "غامق",
-
-                active =
-                    currentSpan.fontWeight ==
-                        FontWeight.Bold,
-
-                onClick = onToggleBold
-            )
-
-            ToolbarButton(
-
-                icon = Icons.Default.FormatItalic,
-
-                label = "مائل",
-
-                active =
-                    currentSpan.fontStyle ==
-                        androidx.compose.ui.text.font.FontStyle.Italic,
-
-                onClick = onToggleItalic
-            )
-
-            ToolbarButton(
-
-                icon =
-                    Icons.Default.FormatUnderlined,
-
-                label = "تسطير",
-
-                active =
-                    currentSpan.textDecoration
-                        ?.contains(
-                            androidx.compose.ui.text.style.TextDecoration.Underline
-                        ) == true,
-
-                onClick = onToggleUnderline
-            )
-
-            ToolbarTextButton(
-                label = "ع1",
-                active =
-                    currentSpan.fontSize == 26.sp,
-                onClick = onHeading1
-            )
-
-            ToolbarTextButton(
-                label = "ع2",
-                active =
-                    currentSpan.fontSize == 22.sp,
-                onClick = onHeading2
-            )
-
-            ToolbarTextButton(
-                label = "عادي",
-                active =
-                    currentSpan.fontSize == null,
-                onClick = onNormal
-            )
-
-            ToolbarButton(
-
-                icon =
-                    Icons.Filled.FormatListBulleted,
-
-                                label = "تعداد نقطي",
-                active = isUnorderedListActive,
-                onClick = onBulletList
-            )
-
-            ToolbarButton(
-
-                icon =
-                    Icons.Filled.FormatListNumbered,
-
-                                label = "تعداد مرقم",
-                active = isOrderedListActive,
-                onClick = onNumberedList
-            )
-
-            ToolbarButton(
-
-                icon =
-                    Icons.Filled.FormatShapes,
-
-                label = "تمييز",
-
-                active = showHighlightPicker,
-
-                onClick =
-                    onToggleHighlightPicker
-            )
-
-            ToolbarButton(
-
-                icon =
-                    Icons.Default.FormatColorFill,
-
-                label = "لون",
-
-                active = showColorPicker,
-
-                onClick = onToggleColorPicker
-            )
-        }
-    }
-}
-
-@Composable
-private fun ToolbarButton(
-    icon: ImageVector,
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit
-) {
-
-    val colors =
-        MaterialTheme.colorScheme
-
-    IconButton(
-
-        onClick = onClick,
-
-        modifier =
-            Modifier.size(34.dp)
-    ) {
-
-        Icon(
-
-            icon,
-
-            contentDescription = label,
-
-            tint =
-                if (active) {
-                    colors.primary
-                } else {
-                    colors.onSurfaceVariant
-                },
-
-            modifier =
-                Modifier.size(19.dp)
-        )
-    }
-}
-
-@Composable
-private fun ToolbarTextButton(
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit
-) {
-
-    val colors =
-        MaterialTheme.colorScheme
-
-    Text(
-
-        text = label,
-
-        fontFamily =
-            DaftarFonts.Cairo,
-
-        fontSize = 12.sp,
-
-        color =
-            if (active) {
-                colors.primary
-            } else {
-                colors.onSurfaceVariant
-            },
-
-        fontWeight =
-            if (active) {
-                FontWeight.Bold
-            } else {
-                FontWeight.Medium
-            },
-
-        modifier = Modifier
-            .clip(
-                RoundedCornerShape(6.dp)
-            )
-            .clickable(
-                onClick = onClick
-            )
-            .padding(
-                horizontal = 7.dp,
-                vertical = 7.dp
-            )
-    )
-}
-
-@Composable
-private fun PickerButton(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
-
-    val colors =
-        MaterialTheme.colorScheme
-
-    Column(
-
-        horizontalAlignment =
-            Alignment.CenterHorizontally,
-
-        modifier = Modifier
-            .clip(
-                RoundedCornerShape(12.dp)
-            )
-            .clickable(
-                onClick = onClick
-            )
-            .background(
-                colors.surfaceVariant
-            )
-            .padding(
-                horizontal = 20.dp,
-                vertical = 14.dp
-            )
-    ) {
-
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = colors.primary
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(4.dp)
-        )
-
-        Text(
-            text = label,
-            fontFamily = DaftarFonts.Cairo,
-            fontSize = 13.sp,
-            color = colors.onSurface
-        )
-    }
-}

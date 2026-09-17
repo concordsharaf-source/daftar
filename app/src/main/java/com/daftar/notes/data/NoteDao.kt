@@ -70,6 +70,11 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE isDeleted = 1")
     suspend fun emptyTrash()
 
+    /**
+     * بحث على مستوى قاعدة البيانات (متاح للاستخدام عند ضخامة عدد الملاحظات).
+     * البحث الحالي في HomeViewModel يجري على فهرس نصي في الذاكرة لأن النص
+     * المجرّد من HTML يعطي نتائج أدق.
+     */
     @Query("SELECT * FROM notes WHERE (title LIKE '%' || :query || '%' OR contentHtml LIKE '%' || :query || '%') AND isDeleted = 0 ORDER BY isPinned DESC, updatedAt DESC")
     fun searchNotes(query: String): Flow<List<Note>>
 
