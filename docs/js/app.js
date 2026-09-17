@@ -888,7 +888,6 @@ function openNoteMenu(note) {
     [note.locked ? '🔓' : '🔒', note.locked ? 'إلغاء قفل الملاحظة' : 'قفل الملاحظة', async () => {
       await toggleNoteLock(note);
     }],
-    ['☑', 'تحديد لمزيد من العمليات', () => { enterSelection('list', { preselect: [note.id] }); }],
     ['↗', 'مشاركة', async () => {
       if (note.locked && !(await ensureNoteUnlocked(note, { silent: true }))) return;
       await shareNote(note);

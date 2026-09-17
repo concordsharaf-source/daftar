@@ -138,6 +138,17 @@ await wait(500);
 }
 await page.screenshot({ path: `${OUT}/14-multi-select.png` });
 
+// خيارات الملاحظة: يجب ألا تحتوي «تحديد لمزيد من العمليات»
+{
+  await page.evaluate(() => document.querySelectorAll('.card')[0].querySelector('.card-more').click());
+  await wait(600);
+  const rows = await page.$$eval('#menu-note .sheet-row', (els) => els.map((e) => e.textContent.trim()));
+  check(!rows.some((t) => t.includes('تحديد لمزيد')), 'خيار «تحديد لمزيد من العمليات» أُزيل من القائمة', rows.join(' | '));
+  await tap('#select-close').catch(() => {});
+  await page.keyboard.press('Escape');
+  await wait(500);
+}
+
 // زر «تحديد» في الشريط العلوي: الطريقة الأوضح
 await tap('#select-close');
 await wait(500);
