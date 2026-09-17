@@ -21,7 +21,7 @@
   <header class="appbar">
     <div class="brand">
       <h1>دفتر</h1>
-      <span class="ver">v2.6</span>
+      <span class="ver">v2.7</span>
     </div>
     <div class="actions">
       <button id="btn-search" class="icon-btn" aria-label="بحث" title="بحث">
@@ -112,10 +112,38 @@
   </div>
 
   <div id="editor" class="editor paper" contenteditable="true" dir="rtl" data-placeholder="اكتب ملاحظتك هنا…"></div>
-  <div id="editor-foot" class="editor-foot"></div>
+  <div class="editor-foot">
+    <span id="editor-counts" class="counts">0 كلمة • 0 حرف</span>
+    <span id="editor-foot" class="foot-date"></span>
+  </div>
 </section>
 
 <!-- ============ الأوراق والحوارات ============ -->
+<!-- ============ شاشة القفل ============ -->
+<div id="gate" class="gate" hidden>
+  <div class="gate-inner">
+    <div class="gate-brand">دفتر</div>
+    <p class="gate-title" id="gate-title">أدخل الباترن لفتح دفترك</p>
+    <p class="gate-error" id="gate-error"></p>
+
+    <div id="gate-pattern-host" class="pattern-wrap" hidden></div>
+
+    <form id="gate-pin-form" class="gate-pin" hidden>
+      <input id="gate-pin" type="password" inputmode="numeric" autocomplete="off"
+             placeholder="الرمز السري" aria-label="الرمز السري" />
+      <button class="btn primary" type="submit">فتح</button>
+    </form>
+
+    <button id="gate-bio" class="gate-bio" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1C7.03 1 3 5.03 3 10v3h2v-3c0-3.86 3.14-7 7-7s7 3.14 7 7v1c0 1.1-.9 2-2 2s-2-.9-2-2v-3c0-2.76-2.24-5-5-5S5 5.24 5 8v7c0 3.31 2.69 6 6 6 .85 0 1.66-.18 2.39-.5l.61 1.9c-1 .35-2.07.54-3.2.54-4.42 0-8-3.58-8-8V8c0-3.87 3.13-7 7-7s7 3.13 7 7v3c0 .55.45 1 1 1s1-.45 1-1v-3c0-4.97-4.03-9-9-9"/></svg>
+      <span>افتح ببصمة الجهاز</span>
+    </button>
+
+    <button id="gate-cancel" class="btn ghost" hidden>إلغاء</button>
+    <p class="gate-hint" id="gate-hint"></p>
+  </div>
+</div>
+
 <div class="sheet-backdrop" hidden></div>
 
 <div id="sheet-note" class="sheet">
@@ -177,6 +205,27 @@
       <span id="set-font-size-value">18px</span>
     </div>
 
+    <h4 class="sheet-sub">الخصوصية والأمان</h4>
+    <div class="row-between">
+      <div class="row-label">
+        <strong>قفل التطبيق</strong>
+        <small id="lock-status">غير مفعّل</small>
+      </div>
+      <button id="btn-lock-toggle" class="btn primary">تفعيل</button>
+    </div>
+    <div id="lock-methods" class="chips column" hidden>
+      <button class="chip-btn" data-method="pattern">باترن (ربط النقاط)</button>
+      <button class="chip-btn" data-method="pin">رمز سري (أقوى)</button>
+      <button class="chip-btn" data-method="biometric" id="chip-biometric">بصمة الجهاز</button>
+    </div>
+    <div id="lock-relock-wrap" hidden>
+      <p class="row-label small">القفل التلقائي عند مغادرة التطبيق</p>
+      <div id="lock-relock" class="chips"></div>
+    </div>
+    <button id="btn-lock-now" class="btn ghost wide" hidden>اقفل الآن</button>
+    <button id="btn-lock-off" class="btn ghost danger wide" hidden>إطفاء القفل وإزالة التشفير</button>
+    <p class="hint" id="lock-hint"></p>
+
     <h4 class="sheet-sub">البيانات</h4>
     <p class="muted" id="set-stats"></p>
     <p class="muted" id="set-storage"></p>
@@ -184,6 +233,30 @@
 
     <h4 class="sheet-sub">حول</h4>
     <p class="muted">دفتر 2.6 — نسخة الويب (PWA). تعمل بلا اتصال، وبياناتك تبقى على جهازك. القفل بالرمز والبصمة في مرحلة تالية.</p>
+  </div>
+</div>
+
+<div id="sheet-lock-setup" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body">
+    <h3 class="sheet-title" id="setup-title">ارسم باترن جديد</h3>
+    <p class="muted" id="setup-sub">اربط ٤ نقاط على الأقل</p>
+    <div id="setup-pattern-host" class="pattern-wrap"></div>
+    <p class="row-error" id="setup-error"></p>
+    <button class="btn ghost wide" id="setup-cancel">إلغاء</button>
+  </div>
+</div>
+
+<div id="dialog-prompt" class="dialog">
+  <div class="dialog-card">
+    <h3 id="prompt-title"></h3>
+    <p id="prompt-body"></p>
+    <input id="prompt-input" class="prompt-input" />
+    <p class="row-error" id="prompt-error"></p>
+    <div class="dialog-actions">
+      <button id="prompt-cancel" class="btn ghost">إلغاء</button>
+      <button id="prompt-ok" class="btn primary">تأكيد</button>
+    </div>
   </div>
 </div>
 

@@ -10,6 +10,8 @@ import {
   getSettings, setSetting, importNotes,
 } from './db.js';
 import { RichEditor } from './editor.js';
+import * as lock from './lock.js';
+import { createPatternPad } from './pattern.js';
 import {
   buildBackupZip, backupFileName, parseBackupFile, applyImport, stats,
 } from './backup.js';
@@ -40,6 +42,13 @@ const state = {
   currentId: null,
   editor: null,
   installEvent: null,
+  backgroundedAt: 0,
+  gateResolve: null,
+  gateMode: 'unlock',
+  lockChoosing: false,
+  setupPattern: null,
+  setupFirst: null,
+  setupStage: 0,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -77,6 +86,43 @@ function confirmDialog({ title, body, confirmText = 'تأكيد', danger = false
     const onCancel = () => done(false);
     ok.addEventListener('click', onOk);
     cancel.addEventListener('click', onCancel);
+  });
+}
+
+/** حوار إدخال نصّي عام يعيد Promise<string|null>. */
+function promptDialog({ title, body, placeholder = '', type = 'text', validate = null, confirmText = 'تأكيد' }) {
+  return new Promise((resolve) => {
+    const dlg = $('#dialog-prompt');
+    $('#prompt-title').textContent = title;
+    $('#prompt-body').textContent = body || '';
+    const input = $('#prompt-input');
+    input.value = '';
+    input.type = type;
+    input.placeholder = placeholder;
+    input.inputMode = type === 'password' ? 'numeric' : 'text';
+    $('#prompt-error').textContent = '';
+    $('#prompt-ok').textContent = confirmText;
+    dlg.classList.add('open');
+    setTimeout(() => input.focus(), 80);
+
+    const cleanup = () => {
+      dlg.classList.remove('open');
+      $('#prompt-ok').removeEventListener('click', onOk);
+      $('#prompt-cancel').removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+    };
+    const finish = (value) => { cleanup(); resolve(value); };
+    const onOk = () => {
+      const value = input.value.trim();
+      const error = validate ? validate(value) : null;
+      if (error) { $('#prompt-error').textContent = error; return; }
+      finish(value);
+    };
+    const onCancel = () => finish(null);
+    const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); onOk(); } };
+    $('#prompt-ok').addEventListener('click', onOk);
+    $('#prompt-cancel').addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
   });
 }
 
@@ -284,6 +330,12 @@ async function refreshNotes() {
 }
 
 // ---------------------------------------------------------------- المحرر
+
+/** عدّاد الكلمات والأحرف أسفل الملاحظة (بنفس صيغة نسخة أندرويد). */
+function renderCounts({ words, chars }) {
+  $('#editor-counts').textContent = `${words} كلمة • ${chars} حرف`;
+  $('#editor-counts').title = `${chars} حرف بلا مسافات`;
+}
 
 function setSaveStatus(kind) {
   const el = $('#save-status');
@@ -599,6 +651,7 @@ function renderSettings() {
 }
 
 async function openSettings() {
+  renderLockUI();
   const s = await stats();
   $('#set-stats').textContent = `${s.notes} ملاحظة (${s.trashed} في السلة) • ${s.images} صورة • ${s.chars} حرف`;
   $('#btn-install').hidden = !state.installEvent;
@@ -676,6 +729,12 @@ function bindEvents() {
     btn.addEventListener('click', () => {
       const cmd = btn.dataset.cmd;
       const value = btn.dataset.value || null;
+      if (cmd === 'removeFormat') {
+        // ✕ يلغي كل التأثيرات — بما فيها ما سيجري كتابته بعد المؤشر
+        state.editor.resetTypingFormat();
+        toast('أُلغيت كل التأثيرات — النص القادم بلا تنسيق');
+        return;
+      }
       state.editor.exec(cmd, value);
       if (cmd === 'insertUnorderedList' || cmd === 'insertOrderedList') refreshToolbarState();
     });
@@ -745,9 +804,21 @@ function bindEvents() {
   // العودة للقائمة عند تغيير المظهر من النظام
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyAppearance);
 
-  // إخفاء الواجهة عند مغادرة الصفحة بعد الحفظ الفوري
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && state.editor?.hasUnsaved) state.editor.save();
+  // الحفظ عند مغادرة الصفحة + القفل التلقائي عند العودة بعد المهلة
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'hidden') {
+      state.backgroundedAt = Date.now();
+      if (state.editor?.hasUnsaved) await state.editor.save();
+      return;
+    }
+    if (lock.isEnabled() && lock.isUnlocked() && lock.shouldRelock(state.backgroundedAt)) {
+      // ارجع للقائمة قبل القفل حتى لا يبقى محتوى الملاحظة معروضًا
+      if (!$('#screen-editor').hidden) await closeEditor({ skipSave: true });
+      lock.lockNow();
+      appStarted = false;
+      $('#notes-list').innerHTML = '';
+      showGate({ mode: 'unlock', reason: 'resume' }).then((ok) => { if (ok) enterApp(); });
+    }
   });
 }
 
@@ -759,7 +830,372 @@ function refreshToolbarState() {
   });
 }
 
+
+// ---------------------------------------------------------------- بوابة القفل
+
+let gatePad = null;
+let gateVerifyTimer = null;
+
+/** يعرض بوابة القفل ويعيد Promise<boolean> (true عند نجاح الفتح). */
+function showGate({ mode = 'unlock', reason = '', allowCancel = false } = {}) {
+  // بوابة سابقة معلّقة؟ نغلقها (بلا فتح) حتى لا يبقى وعدٌ منتظر للأبد
+  if (state.gateResolve) {
+    const previous = state.gateResolve;
+    state.gateResolve = null;
+    previous(false);
+  }
+  const gate = $('#gate');
+  gate.hidden = false;
+  state.gateMode = mode;
+  document.body.classList.add('gated');
+
+  const lockState = lock.getState();
+  const method = lockState.method;
+  $('#gate-title').textContent = mode === 'verify'
+    ? 'أكّد هويتك للمتابعة'
+    : (method === 'biometric' ? 'افتح ببصمة الجهاز' : 'أدخل ما يفتح دفترك');
+  $('#gate-error').textContent = '';
+  $('#gate-cancel').hidden = !allowCancel;
+  $('#gate-bio').hidden = !(method === 'biometric' || lockState.hasBiometric);
+
+  // لوحة الباترن
+  const patternHost = $('#gate-pattern-host');
+  const showPattern = method === 'pattern';
+  patternHost.hidden = !showPattern;
+  if (showPattern) {
+    if (gatePad) gatePad.destroy();
+    gatePad = createPatternPad(patternHost, { minDots: 4, onComplete: (r) => handleGateSecret(r.pattern) });
+  }
+
+  // حقل الرمز السري
+  const pinForm = $('#gate-pin-form');
+  pinForm.hidden = method !== 'pin';
+  if (method === 'pin') {
+    $('#gate-pin').value = '';
+    setTimeout(() => $('#gate-pin').focus(), 120);
+  }
+
+  updateGateHint();
+
+  // فتح تلقائي بالبصمة عند الإقلاع إن كانت هي الطريقة
+  if (mode === 'unlock' && method === 'biometric') {
+    setTimeout(() => handleGateBiometric(), 350);
+  }
+
+  return new Promise((resolve) => { state.gateResolve = resolve; });
+}
+
+function hideGate() {
+  $('#gate').hidden = true;
+  document.body.classList.remove('gated');
+  if (gatePad) { gatePad.destroy(); gatePad = null; }
+}
+
+function updateGateHint(busy = false) {
+  const remaining = lock.lockRemainingMs();
+  const hint = $('#gate-hint');
+  if (busy) {
+    hint.textContent = 'جارٍ التحقق…';
+    return;
+  }
+  if (remaining > 0) {
+    clearInterval(gateVerifyTimer);
+    const tick = () => {
+      const left = lock.lockRemainingMs();
+      hint.textContent = left > 0
+        ? `محاولات كثيرة خاطئة — حاول بعد ${Math.ceil(left / 1000)} ثانية`
+        : '';
+      if (left <= 0) clearInterval(gateVerifyTimer);
+    };
+    tick();
+    gateVerifyTimer = setInterval(tick, 500);
+    return;
+  }
+  hint.textContent = state.gateMode === 'verify'
+    ? 'مطلوب للتحقق قبل تغيير إعدادات القفل'
+    : '';
+}
+
+function gateSuccess() {
+  const resolve = state.gateResolve;
+  state.gateResolve = null;
+  clearInterval(gateVerifyTimer);
+  hideGate();
+  resolve?.(true);
+}
+
+async function handleGateSecret(secret) {
+  if (!secret) return;
+  updateGateHint(true);
+  const result = await lock.unlockWithSecret(secret);
+  if (result.ok) {
+    $('#gate-error').textContent = '';
+    gateSuccess();
+    return;
+  }
+  if (result.reason === 'locked-out') {
+    $('#gate-error').textContent = 'الإدخال مقفل مؤقتًا';
+  } else {
+    $('#gate-error').textContent = `غير صحيح — المحاولات المتبقية: ${result.remaining ?? 0}`;
+  }
+  $('#gate-pin').value = '';
+  updateGateHint();
+}
+
+async function handleGateBiometric() {
+  updateGateHint(true);
+  const result = await lock.unlockWithBiometric();
+  if (result.ok) {
+    $('#gate-error').textContent = '';
+    gateSuccess();
+    return;
+  }
+  updateGateHint();
+  if (result.reason === 'cancelled') {
+    $('#gate-error').textContent = '';
+  } else if (result.reason === 'no-credential') {
+    $('#gate-error').textContent = 'لم تُسجَّل بصمة على هذا الجهاز';
+  } else {
+    $('#gate-error').textContent = 'تعذّر الفتح بالبصمة';
+  }
+}
+
+// طلب تحقق سريع من المستخدم (قبل تغيير القفل أو إطفائه).
+const VERIFY_GRACE_MS = 20_000;
+
+/**
+ * طلب تحقق سريع من المستخدم قبل تغيير القفل.
+ * - تغيير الطريقة: يُتجاوز الطلب إن كان قد فتح التطبيق بنفسه قبل أقل من ٢٠ ثانية.
+ * - إطفاء القفل (strict): يُطلب التحقق دائمًا لأنه يزيل التشفير نهائيًا.
+ */
+async function requestUnlockVerification({ strict = false } = {}) {
+  if (!lock.isEnabled()) return true;
+  if (!strict && lock.isUnlocked() && Date.now() - lock.lastUnlockAt() < VERIFY_GRACE_MS) return true;
+  const ok = await showGate({ mode: 'verify', allowCancel: true });
+  return ok === true;
+}
+
+// ---------------------------------------------------------------- إعدادات الأمان
+
+function relockLabel(ms) {
+  if (ms <= 0) return 'فوري';
+  if (ms < 60_000) return `${Math.round(ms / 1000)} ثانية`;
+  return `${Math.round(ms / 60_000)} دقيقة`;
+}
+
+function renderLockUI() {
+  const s = lock.getState();
+  $('#lock-status').textContent = s.enabled
+    ? `مفعّل — ${lock.methodLabel()}${s.encrypted ? ' • البيانات مشفّرة' : ' • بلا تشفير'}`
+    : 'غير مفعّل';
+  $('#btn-lock-toggle').textContent = s.enabled ? 'إدارة' : 'تفعيل';
+  $('#lock-methods').hidden = !state.lockChoosing;
+  $$('#lock-methods .chip-btn').forEach((btn) => {
+    btn.classList.toggle('active', s.enabled && btn.dataset.method === s.method);
+  });
+  $('#chip-biometric').textContent = s.hasBiometric ? 'بصمة الجهاز (مسجّلة)' : 'بصمة الجهاز';
+
+  const relockWrap = $('#lock-relock-wrap');
+  relockWrap.hidden = !s.enabled;
+  const host = $('#lock-relock');
+  host.innerHTML = '';
+  [[0, 'فوري'], [30_000, '٣٠ ثانية'], [60_000, 'دقيقة'], [300_000, '٥ دقائق']].forEach(([ms, label]) => {
+    const b = document.createElement('button');
+    b.className = 'chip-btn' + (s.relockMs === ms ? ' active' : '');
+    b.textContent = label;
+    b.addEventListener('click', async () => {
+      await lock.setRelockMs(ms);
+      renderLockUI();
+    });
+    host.appendChild(b);
+  });
+
+  $('#btn-lock-now').hidden = !s.enabled;
+  $('#btn-lock-off').hidden = !s.enabled;
+
+  const hint = $('#lock-hint');
+  if (!s.enabled) {
+    hint.textContent = 'القفل يمنع فتح التطبيق على هذا الجهاز. الباترن/الرمز يُستخدم أيضًا '
+      + 'لتشفير نص ملاحظاتك (AES-GCM) فلا تُقرأ من ملفات المتصفح بلا مفتاح.';
+  } else if (!s.encrypted) {
+    hint.textContent = 'تنبيه: جهازك لا يدعم استخراج مفتاح من البصمة (WebAuthn PRF)، لذا القفل '
+      + 'حاجز ضد الفتح العابر فقط دون تشفير. للحماية الكاملة استخدم رمزًا سريًا أو باترن.';
+  } else {
+    hint.textContent = `احفظ ${lock.methodLabel()} في مكان آمن: لا يمكن استرجاع الملاحظات إن نسيته، `
+      + 'ولن يستطيع أحد (ولا نحن) فتحها بدونه.';
+  }
+}
+
+/** إعداد الباترن: رسم ثم تأكيد. */
+async function startPatternSetup() {
+  if (lock.isEnabled() && !(await requestUnlockVerification())) return;
+  state.setupStage = 0;
+  state.setupFirst = null;
+  state.setupPattern = null;
+  openSheet('#sheet-lock-setup');
+  $('#setup-title').textContent = 'ارسم باترن جديد';
+  $('#setup-sub').textContent = 'اربط ٤ نقاط على الأقل';
+  $('#setup-error').textContent = '';
+
+  const host = $('#setup-pattern-host');
+  if (state.setupPattern) state.setupPattern.destroy();
+  state.setupPattern = createPatternPad(host, {
+    minDots: 4,
+    onComplete: async (result) => {
+      if (!result.ok) {
+        $('#setup-error').textContent = 'اربط ٤ نقاط على الأقل';
+        return;
+      }
+      $('#setup-error').textContent = '';
+      if (state.setupStage === 0) {
+        state.setupFirst = result.pattern;
+        state.setupStage = 1;
+        $('#setup-title').textContent = 'أعد رسم الباترن للتأكيد';
+        $('#setup-sub').textContent = 'يجب أن يتطابق الرسمان';
+        return;
+      }
+      if (result.pattern !== state.setupFirst) {
+        state.setupStage = 0;
+        state.setupFirst = null;
+        $('#setup-title').textContent = 'ارسم باترن جديد';
+        $('#setup-error').textContent = 'الرسمان غير متطابقين — أعد المحاولة';
+        return;
+      }
+      await lock.setupSecret('pattern', result.pattern, { relockMs: lock.getState().relockMs });
+      state.lockChoosing = false;
+      closeSheets();
+      toast('تم تفعيل القفل بالباترن — البيانات الآن مشفّرة');
+      await refreshNotes();
+      renderLockUI();
+    },
+  });
+}
+
+/** إعداد رمز سري (٦ أرقام على الأقل) — أقوى من الباترن. */
+async function startPinSetup() {
+  if (lock.isEnabled() && !(await requestUnlockVerification())) return;
+  const pin = await promptDialog({
+    title: 'رمز سري جديد',
+    body: '٦ أرقام على الأقل. يُشفَّر به نص ملاحظاتك، ولا يمكن استرجاعه إن نسيته.',
+    placeholder: '••••••',
+    type: 'password',
+    confirmText: 'متابعة',
+    validate: (v) => (/^\d{6,}$/.test(v) ? null : 'أدخل ٦ أرقام أو أكثر'),
+  });
+  if (!pin) return;
+  const again = await promptDialog({
+    title: 'تأكيد الرمز',
+    body: 'أعد إدخال الرمز نفسه',
+    placeholder: '••••••',
+    type: 'password',
+    validate: (v) => (v === pin ? null : 'الرمزان غير متطابقين'),
+  });
+  if (!again) return;
+  await lock.setupSecret('pin', pin, { relockMs: lock.getState().relockMs });
+  state.lockChoosing = false;
+  toast('تم تفعيل القفل بالرمز السري — البيانات الآن مشفّرة');
+  await refreshNotes();
+  renderLockUI();
+}
+
+/** إعداد القفل بالبصمة. */
+async function startBiometricSetup() {
+  if (lock.isEnabled() && !(await requestUnlockVerification())) return;
+  const available = await lock.checkPlatformAuthenticator();
+  if (!available) {
+    toast('لا يوجد قارئ بصمة/وجه متاح في هذا المتصفح أو الجهاز', 4000);
+    return;
+  }
+  toast('اطلب من جهازك بصمتك للتسجيل…', 2500);
+  const result = await lock.setupBiometric({ relockMs: lock.getState().relockMs });
+  if (!result.ok) {
+    toast(result.reason === 'cancelled' ? 'أُلغيت العملية' : 'تعذّر تسجيل البصمة', 3500);
+    return;
+  }
+  await refreshNotes();
+  renderLockUI();
+  if (result.encrypted) {
+    toast('تم تفعيل القفل بالبصمة — البيانات مشفّرة بمفتاح من الجهاز');
+  } else {
+    toast('تم تفعيل القفل بالبصمة (حاجز فقط): جهازك لا يدعم استخراج مفتاح تشفير', 5000);
+  }
+}
+
+async function disableLockFlow() {
+  if (!(await requestUnlockVerification({ strict: true }))) return;
+  const ok = await confirmDialog({
+    title: 'إطفاء القفل',
+    body: 'سيُلغى التشفير وتُكتب الملاحظات بلا حماية على هذا الجهاز. متابعة؟',
+    confirmText: 'إطفاء',
+    danger: true,
+  });
+  if (!ok) return;
+  await lock.disableLock();
+  state.lockChoosing = false;
+  await refreshNotes();
+  renderLockUI();
+  toast('أُطفئ القفل وأُزيل التشفير');
+}
+
+function bindLockControls() {
+  $('#btn-lock-toggle').addEventListener('click', () => {
+    state.lockChoosing = !state.lockChoosing;
+    renderLockUI();
+  });
+  // أي نقرة على صف القفل تفتح قائمة الطرق إن كانت مغلقة
+  $$('#lock-methods .chip-btn').forEach((btn) => btn.addEventListener('focus', () => {
+    if (!state.lockChoosing) { state.lockChoosing = true; renderLockUI(); }
+  }));
+  $$('#lock-methods .chip-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const method = btn.dataset.method;
+      if (method === 'pattern') await startPatternSetup();
+      else if (method === 'pin') await startPinSetup();
+      else await startBiometricSetup();
+    });
+  });
+  $('#setup-cancel').addEventListener('click', () => {
+    closeSheets();
+    state.setupStage = 0;
+    state.setupFirst = null;
+    if (state.setupPattern) { state.setupPattern.destroy(); state.setupPattern = null; }
+  });
+  $('#btn-lock-now').addEventListener('click', () => {
+    lock.lockNow();
+    appStarted = false;
+    closeSheets();
+    showGate({ mode: 'unlock', reason: 'manual' }).then(() => enterApp());
+  });
+  $('#btn-lock-off').addEventListener('click', disableLockFlow);
+  $('#gate-cancel').addEventListener('click', () => {
+    const resolve = state.gateResolve;
+    state.gateResolve = null;
+    hideGate();
+    resolve?.(false);
+  });
+  $('#gate-pin-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    handleGateSecret($('#gate-pin').value.trim());
+  });
+  $('#gate-bio').addEventListener('click', handleGateBiometric);
+}
+
 // ---------------------------------------------------------------- التشغيل
+
+let appStarted = false;
+
+/** يبدأ عرض الملاحظات بعد نجاح الفتح (أو عند عدم وجود قفل). */
+async function enterApp() {
+  if (appStarted) return;
+  appStarted = true;
+  await refreshNotes();
+  // فتح ملاحظة مباشرة عبر الرابط (#note-3) — بعد الفتح فقط
+  const match = location.hash.match(/^#note-(\d+)$/);
+  if (match) {
+    const id = Number(match[1]);
+    if (await getNote(id)) await openEditor(id);
+  }
+}
 
 async function boot() {
   const result = await init();
@@ -777,6 +1213,7 @@ async function boot() {
     contentEl: $('#editor'),
     titleEl: $('#note-title'),
     onStatusChange: setSaveStatus,
+    onCountsChange: renderCounts,
     onSave: async ({ title, html }) => {
       if (state.currentId == null) return;
       await patchNote(state.currentId, { title, contentHtml: html });
@@ -784,17 +1221,18 @@ async function boot() {
   });
 
   bindEvents();
+  bindLockControls();
   renderSortChips();
-  await refreshNotes();
-
-  // فتح ملاحظة مباشرة عبر الرابط (#note-3)
-  const match = location.hash.match(/^#note-(\d+)$/);
-  if (match) {
-    const id = Number(match[1]);
-    if (await getNote(id)) await openEditor(id);
-  }
-
   registerServiceWorker();
+
+  // القفل أولًا: لا تُعرض أي ملاحظة قبل التحقق
+  const lockState = await lock.init();
+  renderLockUI();
+  if (lockState.enabled && !lockState.unlocked) {
+    showGate({ mode: 'unlock', reason: 'startup' }).then((ok) => { if (ok) enterApp(); });
+  } else {
+    await enterApp();
+  }
 }
 
 function registerServiceWorker() {

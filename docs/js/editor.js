@@ -15,11 +15,12 @@ const SNAPSHOT_DELAY = 1500; // لقطة واحدة أثناء الكتابة ا
 const SAVE_DELAY = 750;      // debounce الحفظ (نفس النسخة الأصلية)
 
 export class RichEditor {
-  constructor({ contentEl, titleEl, onSave, onStatusChange }) {
+  constructor({ contentEl, titleEl, onSave, onStatusChange, onCountsChange }) {
     this.contentEl = contentEl;
     this.titleEl = titleEl;
     this.onSave = onSave;
     this.onStatusChange = onStatusChange || (() => {});
+    this.onCountsChange = onCountsChange || (() => {});
 
     this.undoStack = [];
     this.redoStack = [];
@@ -49,6 +50,7 @@ export class RichEditor {
       if (this.applyingRemote) return;
       this._scheduleSnapshot();
       this._scheduleSave();
+      this._scheduleCounts();
     };
     this.contentEl.addEventListener('input', this.onInput);
     this.titleEl.addEventListener('input', this.onInput);
@@ -111,6 +113,37 @@ export class RichEditor {
     this.lastSnapshotHtml = html || '';
     this.lastSnapshotTitle = title;
     this.onStatusChange('idle');
+    this.refreshCounts();
+  }
+
+  // ------------------------------------------------------------ العدّادات
+
+  /** نصوص الملاحظة العادية (بلا وسوم). */
+  get plainText() {
+    return (this.contentEl.innerText || '').replace(/\u200B/g, '');
+  }
+
+  /** عدّاد الكلمات والأحرف — مطابق لمنطق نسخة أندرويد. */
+  getCounts() {
+    const text = this.plainText;
+    const trimmed = text.trim();
+    const words = trimmed ? trimmed.split(/\s+/).length : 0;
+    const chars = text.length;
+    const noSpaces = text.replace(/\s/g, '').length;
+    return { words, chars, noSpaces };
+  }
+
+  _scheduleCounts() {
+    clearTimeout(this.countsTimer);
+    this.countsTimer = setTimeout(() => {
+      try { this.onCountsChange(this.getCounts()); } catch { /* لا يوقف الكتابة */ }
+    }, 120);
+  }
+
+  /** يُستدعى بعد تحميل ملاحظة أو تغيير المحتوى برمجيًا. */
+  refreshCounts() {
+    clearTimeout(this.countsTimer);
+    this.onCountsChange(this.getCounts());
   }
 
   // ------------------------------------------------------------ التنسيق
@@ -140,6 +173,79 @@ export class RichEditor {
   setHighlight(color) { this.exec('hiliteColor', color); }
 
   formatBlock(tag) { this.exec('formatBlock', tag); }
+
+  /**
+   * «إلغاء كل التأثيرات»: يزيل التنسيق من النص المحدّد، وإن كان المؤشر واقفًا
+   * بلا تحديد فإنه يُصفّر حالة الكتابة نفسها — أي أن النص الذي ستكتبه بعد
+   * الزر يخرج نظيفًا بلا عريض/مائل/لون/تظليل/عنوان.
+   *
+   * الطريقة: وسم مؤقّت عند المؤشر، ثم فكّ كل الوسوم السطرية المنسّقة حوله
+   * وإعادة الكتل (عنوان/اقتباس) إلى فقرة عادية، ثم إعادة المؤشر وحذف الوسم.
+   */
+  resetTypingFormat() {
+    this.contentEl.focus();
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return false;
+
+    this._snapshotNow(); // لقطة للتراجع قبل التغيير
+
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed) {
+      // هناك نص محدّد: طبّق إزالة التنسيق عليه
+      this.exec('removeFormat');
+      return true;
+    }
+
+    const marker = document.createElement('span');
+    marker.setAttribute('data-typing-marker', '1');
+    marker.textContent = '\u200B';
+    range.insertNode(marker);
+
+    const BLOCK = /^(P|DIV|H[1-6]|BLOCKQUOTE|LI|UL|OL|PRE)$/;
+    let node = marker.parentNode;
+    while (node && node !== this.contentEl) {
+      const parent = node.parentNode;
+      if (!parent) break;
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        if (BLOCK.test(node.tagName)) {
+          if (node.tagName === 'BLOCKQUOTE' || /^H[1-6]$/.test(node.tagName) || node.tagName === 'PRE') {
+            const paragraph = document.createElement('p');
+            while (node.firstChild) paragraph.appendChild(node.firstChild);
+            parent.replaceChild(paragraph, node);
+          } else {
+            node.removeAttribute('style');
+            node.removeAttribute('class');
+          }
+        } else {
+          // وسم سطري (b/i/u/s/span/mark/font/a/font-size...): فُكّه واحتفظ بالمحتوى
+          while (node.firstChild) parent.insertBefore(node.firstChild, node);
+          parent.removeChild(node);
+        }
+      }
+      node = parent;
+    }
+
+    const placed = this.contentEl.querySelector('[data-typing-marker]');
+    if (placed) {
+      const caret = document.createRange();
+      caret.setStartBefore(placed);
+      caret.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(caret);
+      placed.remove();
+    }
+    this.contentEl.normalize();
+
+    // تصفير الحالة الداخلية للمتصفح (قد تحتفظ بسمات الكتابة السابقة)
+    try {
+      document.execCommand('styleWithCSS', false, false);
+      document.execCommand('removeFormat');
+    } catch { /* غير مدعوم */ }
+
+    this._scheduleSave();
+    this._scheduleCounts();
+    return true;
+  }
 
   insertHtml(html) {
     this.contentEl.focus();
@@ -210,6 +316,7 @@ export class RichEditor {
     this.lastSnapshotTitle = snapshot.title;
     this.dirty = true;
     this._scheduleSave();
+    this._scheduleCounts();
   }
 
   // ------------------------------------------------------------ الحفظ

@@ -8,6 +8,11 @@
  *    أو تصفح خاص في بعض المتصفحات) حتى يظل التطبيق قابلًا للتجربة.
  */
 
+import {
+  encryptField, decryptField, setSessionKey, setFieldEncryption, isFieldEncryption,
+  hasSessionKey,
+} from './crypto.js';
+
 const DB_NAME = 'daftar';
 const DB_VERSION = 1;
 const NOTES = 'notes';
@@ -15,6 +20,9 @@ const IMAGES = 'images';
 const SETTINGS = 'settings';
 
 export const storage = { persistent: false, mode: 'memory' };
+
+/** للمخزن الاحتياطي في الذاكرة — يُستخدم في الاختبارات لتفقّد القيم الخام. */
+export function __rawNotes() { return mem.notes.map((n) => ({ ...n })); }
 
 /** ملاحظة جديدة بمخطط مطابق لنظيرتها في أندرويد. */
 export function newNote(patch = {}) {
@@ -108,25 +116,58 @@ export async function init() {
   return storage;
 }
 
-export async function allNotes() {
+/** يقرأ ملاحظة من المخزن كما هي (بلا فك تشفير). */
+async function readRaw(id) {
+  const key = Number(id);
   if (storage.mode === 'indexeddb') {
-    const list = await tx(NOTES, 'readonly', (s) => reqDone(s.getAll()));
-    return (list || []).sort((a, b) => b.updatedAt - a.updatedAt);
+    return (await tx(NOTES, 'readonly', (s) => reqDone(s.get(key)))) || null;
   }
-  return [...mem.notes].sort((a, b) => b.updatedAt - a.updatedAt);
+  return mem.notes.find((n) => n.id === key) || null;
+}
+
+/** يفك تشفير حقول النص (العنوان والمحتوى) بحسب حالة الجلسة. */
+async function decodeNote(note) {
+  if (!note) return note;
+  return {
+    ...note,
+    title: await decryptField(note.title),
+    contentHtml: await decryptField(note.contentHtml),
+  };
+}
+
+export async function allNotes() {
+  const raw = storage.mode === 'indexeddb'
+    ? await tx(NOTES, 'readonly', (s) => reqDone(s.getAll()))
+    : [...mem.notes];
+  const list = await Promise.all((raw || []).map(decodeNote));
+  return list.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function getNote(id) {
-  if (storage.mode === 'indexeddb') {
-    const note = await tx(NOTES, 'readonly', (s) => reqDone(s.get(Number(id))));
-    return note || null;
-  }
-  return mem.notes.find((n) => n.id === Number(id)) || null;
+  const raw = storage.mode === 'indexeddb'
+    ? await tx(NOTES, 'readonly', (s) => reqDone(s.get(Number(id))))
+    : mem.notes.find((n) => n.id === Number(id));
+  return decodeNote(raw || null);
 }
 
 /** إدراج أو تحديث. يعيد المعرّف الجديد. */
 export async function saveNote(note) {
-  const payload = { ...note, updatedAt: note.updatedAt || Date.now() };
+  const payload = {
+    ...note,
+    // يُشفَّر النص قبل الكتابة إن كان القفل مع التشفير مفعّلًا
+    title: await encryptField(note.title ?? ''),
+    contentHtml: await encryptField(note.contentHtml ?? ''),
+    isEncrypted: isFieldEncryption(),
+  };
+  // حماية من تسريب/فقدان: إن كان التشفير مفعّلًا والمفتاح غائبًا (التطبيق مقفل)
+  // لا نكتب نصًا صريحًا فوق بيانات مشفّرة، بل نبقي الحقول المخزّنة كما هي.
+  if (isFieldEncryption() && !hasSessionKey()) {
+    const existing = payload.id ? await readRaw(payload.id) : null;
+    if (!existing) throw new Error('locked: لا يمكن الكتابة والتطبيق مقفل');
+    payload.title = existing.title;
+    payload.contentHtml = existing.contentHtml;
+    payload.isEncrypted = true;
+  }
   // حاسم: مع مخزن autoIncrement يجب ألا يُرسل المفتاح إطلاقًا عند الإدراج،
   // لأن id = null قيمة غير صالحة وتُفشل العملية (DataError).
   if (payload.id == null) delete payload.id;
@@ -239,6 +280,26 @@ export async function setSetting(key, value) {
   } else {
     mem.settings.set(key, value);
   }
+}
+
+// ---------------------------------------------------------------- ترحيل التشفير
+
+/**
+ * يعيد كتابة كل الملاحظات بمفتاح جديد (أو بلا تشفير).
+ * يُستخدم عند إعداد قفل جديد أو تغيير الطريقة أو إطفاء القفل.
+ * ملاحظة: يحافظ على createdAt/updatedAt فلا يتغيّر ترتيب الملاحظات.
+ */
+export async function migrateNotes(newKey, encryptionOn) {
+  if (isFieldEncryption() && !hasSessionKey()) {
+    throw new Error('locked: لا يمكن ترحيل البيانات بلا مفتاح في الجلسة');
+  }
+  const notes = await allNotes();          // مفكوكة بالمفتاح الحالي (أو نص صريح)
+  setSessionKey(newKey);
+  setFieldEncryption(encryptionOn);
+  for (const note of notes) {
+    await saveNote({ ...note, updatedAt: note.updatedAt });
+  }
+  return notes.length;
 }
 
 // ---------------------------------------------------------------- أدوات النسخ الاحتياطي
