@@ -16,7 +16,10 @@ object TextUtils {
             .replace("&amp;", "&")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
-        return text.lines().joinToString("\n") { it.trim() }
+        // دمج المسافات الناتجة عن إزالة الوسوم + إسقاط الأسطر الفارغة المكررة.
+        // مفيد للعرض وللبحث: «مرحبًا  بك» تصبح «مرحبًا بك».
+        return text.lines()
+            .joinToString("\n") { line -> line.replace(Regex("[ \t\u00A0]{2,}"), " ").trim() }
             .replace(Regex("\n{2,}"), "\n")
             .trim()
     }

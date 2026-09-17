@@ -1,158 +1,174 @@
 ==================================================
-دفتر | Daftar - هيكل المشروع ووظيفة كل ملف
-نسخة 2.6 - تم الاختبار والإصلاح بتاريخ أغسطس 2026
+دفتر | Daftar — هيكل المشروع ووظيفة كل ملف
+نسخة 2.6 — محدَّث بعد مراجعة شاملة (سبتمبر 2026)
 ==================================================
 
-تطبيق ملاحظات Android مبني بـ Kotlin + Jetpack Compose + Room + DataStore.
-البنية معيارية (Modular): كل وظيفة في ملف مستقل ليسهل التعديل اليدوي من GitHub.
+تطبيق ملاحظات عربي (RTL) لأندرويد:
+Kotlin + Jetpack Compose + Room + DataStore + riche-editor.
+البنية معيارية: كل وظيفة في ملف مستقل ليسهل التعديل اليدوي من GitHub.
 
 --------------------------------------------------
-1. نقطة الدخول
+1. نقطة الدخول والتنقل
 --------------------------------------------------
 app/src/main/java/com/daftar/notes/MainActivity.kt
-  - النشاط الرئيسي للتطبيق.
-  - يربط البوابات: فحص قفل التطبيق (AppLockGate) قبل عرض المحتوى.
-  - يستدعي DaftarTheme (الألوان والخطوط الموحدة) ويحدد الشاشات.
+  - النشاط الرئيسي، يرث FragmentActivity (مطلوب لنافذة البصمة).
+  - يربط: الثيم + اتجاه RTL + NavHost (الرئيسية/المحرر/الإعدادات).
+  - يقرأ حالة القفل من AppLockManager (LockPhase) قبل عرض أي محتوى،
+    ويعرض شاشة محايدة حتى تُقرأ الإعدادات (منع ظهور الملاحظات لحظيًا).
+  - يتتبع دورة الحياة: ON_START/ON_STOP لتحديث قفل المهلة.
+  - ينفّذ صيانة خفيفة عند الإقلاع: حذف مجلدات صور بلا ملاحظة.
 
 --------------------------------------------------
-2. طبقة البيانات (Room Database)
+2. طبقة البيانات (Room)
 --------------------------------------------------
-app/src/main/java/com/daftar/notes/data/NoteDatabase.kt
-  - تعريف قاعدة بيانات Room: الجداول + DAOs + تحويل Migrations.
-app/src/main/java/com/daftar/notes/data/Note.kt
-  - كيان الملاحظة: id، العنوان، المحتوى HTML، الحالة، المفضلة،
-    التثبيت، اللون، المجلد، الحذف الناعم.
-app/src/main/java/com/daftar/notes/data/NoteFolder.kt
-  - كيان المجلدات لتنظيم الملاحظات.
-app/src/main/java/com/daftar/notes/data/NoteImage.kt
-  - كيان الصور المرفقة بالملاحظات.
-app/src/main/java/com/daftar/notes/data/NoteDao.kt
-  - استعلامات Room: جلب/حفظ/تحديث/حذف الملاحظات والمجلدات والصور.
-  - الاستعلامات الحية (Flow) لتحديث القائمة تلقائيًا.
-app/src/main/java/com/daftar/notes/data/NotesRepository.kt
-  - طبقة المستودع: تُغلف DAOs وتدير التخزين المحلي
-    (مستودع وحيد قابل للاختبار بسهولة).
+data/Note.kt            كيانات: Note (title, contentHtml, isPinned, isFavorite,
+                        colorLabel, status, isDeleted...) + Folder + NoteImage.
+data/NoteDao.kt         استعلامات Room (Flow للقوائم الحية + نسخ once للعمليات).
+data/DaftarDatabase.kt  إنشاء القاعدة (إصدار 2) + MIGRATION_1_2 من النسخة القديمة.
+data/NotesRepository.kt غلاف DAO. يتولى الحذف المتسلسل (ملاحظة + صور + ملفات)
+                        و cleanupOrphanImages(). ملفات الصور عبر NoteFileStore.
+data/NoteFileStore.kt   إدارة ملفات الصور داخل التخزين الخاص:
+                        imagesDir / copyInto / deleteNoteFiles / orphanNoteDirs.
 
 --------------------------------------------------
 3. التفضيلات (DataStore)
 --------------------------------------------------
-app/src/main/java/com/daftar/notes/data/UserPreferences.kt
-  - تفضيلات المستخدم: القالب (فاتح/داكن)، القفل، حالة التطبيق، إلخ.
+util/SettingsStore.kt   المظهر (system/light/dark)، الخط، قفل الرمز، البصمة،
+                        مهلة القفل، ووقت آخر فتح (lastUnlockTime).
 
 --------------------------------------------------
-4. طبقة الأمان
+4. الأمان
 --------------------------------------------------
-app/src/main/java/com/daftar/notes/security/AppLockManager.kt
-  - إدارة القفل: تفعيل/إيقاف PIN، التحقق من PIN، حالة القفل.
-app/src/main/java/com/daftar/notes/security/PinStore.kt
-  - تخزين PIN داخل Android Keystore (لا يُمس من خارج التطبيق).
-app/src/main/java/com/daftar/notes/security/AppLockGate.kt
-  - شاشة القفل (Composable): إدخال PIN قبل فتح التطبيق.
+security/PinStore.kt     تخزين الرمز: PBKDF2-HMAC-SHA256 (120k دورة) بملح عشوائي
+                         داخل EncryptedSharedPreferences (مفتاح من Keystore)،
+                         تحقق بزمن ثابت، ترقية تلقائية للصيغة القديمة (SHA-256)،
+                         وقفل مؤقت تصاعدي بعد 5 محاولات خاطئة (30s ×2).
+security/AppLockManager.kt آلة حالة واحدة: UNCONFIGURED / LOCKED / UNLOCKED.
+                         قواعد القفل: جلسة جديدة ⇒ قفل، عودة من الخلفية بعد
+                         المهلة ⇒ قفل، تدفق خارجي (كاميرا/منتقي/مشاركة) ⇒ لا قفل.
+                         يُحرَّر التدفق الخارجي تلقائيًا عند العودة للمقدمة.
+security/AppLockGate.kt  بوابة القفل: وضع SETUP (إدخال + تأكيد) ووضع VERIFY،
+                         لوحة أرقام، عرض المحاولات المتبقية والعدّ التنازلي،
+                         وطلب بصمة (suspendCancellableCoroutine) عند تفعيلها.
 
 --------------------------------------------------
-5. الواجهة - الشاشات الرئيسية
+5. الواجهة — الشاشات
 --------------------------------------------------
-app/src/main/java/com/daftar/notes/ui/screens/HomeScreen.kt
-  - القائمة الرئيسية: البحث، الترتيب (الأحدث/الأقدم/أبجدي/أبجدي عربي)،
-    التثبيت، المفضلة، الألوان، إنشاء ملاحظة جديدة.
-app/src/main/java/com/daftar/notes/ui/screens/HomeViewModel.kt
-  - منطق القائمة: البحث النصي، الوضعيات (تثبيت/مفضلة/أخرى)،
-    الترتيب بما فيه تطبيع الأحرف العربية (hamza + التشكيل)،
-    إنشاء/حذف/تثبيت/تفضيل/تلوين الملاحظات.
-app/src/main/java/com/daftar/notes/ui/screens/EditorScreen.kt
-  - شاشة تحرير الملاحظة: العنوان، المحرر الغني RichText،
-    شريط التنسيق (Bold/Italic/Underline/Lists/العنوان/اللون)،
-    Undo/Redo، الصور، المشاركة، تصدير PDF، الحفظ.
-app/src/main/java/com/daftar/notes/ui/screens/EditorViewModel.kt
-  - منطق التحرير: الحفظ التلقائي (debounce 750ms)،
-    الحفظ الفوري عند الخروج (saveNow)، مكدس Undo/Redo
-    (حد 50 لقطة + لقطات تلقائية كل 1.5 ثانية أثناء الكتابة)،
-    تحميل/حفظ الصور.
-app/src/main/java/com/daftar/notes/ui/screens/SettingsScreen.kt
-  - الإعدادات: القالب، الأمان، النسخ الاحتياطي، عن التطبيق.
+ui/screens/HomeScreen.kt       الشاشة الرئيسية: بحث، ترتيب، تثبيت، مفضلة، ألوان،
+                               أوراق (سلة/نسخ احتياطي/ألوان) وحوارات التأكيد.
+ui/screens/HomeComponents.kt   مكوّنات القائمة (صفوف، عناوين أقسام، قائمة خيارات
+                               الملاحظة، نتائج البحث) — مفصولة لتقصير الملف.
+ui/screens/HomeViewModel.kt    منطق القائمة: فهرس نصي للبحث (stripHtml مرة واحدة)،
+                               ترتيب (الأحدث/الأقدم/أبجدي/أبجدي عربي بتطبيع الهمزات
+                               والتشكيل)، وعمليات CRUD.
+ui/screens/EditorScreen.kt     المحرر: العنوان، RichText، طلب إذن الكاميرا،
+                               المعرض، الصور، المشاركة، PDF، الحفظ عند الخروج.
+ui/screens/EditorToolbar.kt    شريط التنسيق وأزراره، لوحات الألوان ودوال تحويلها.
+ui/screens/EditorViewModel.kt  حفظ تلقائي (debounce 750ms) + saveNow عند الخروج،
+                               Undo/Redo (50 لقطة + لقطات تلقائية أثناء الكتابة)،
+                               بيانات وصفية (تثبيت/مفضلة/لون/حالة)، وإدارة الصور.
+ui/screens/SettingsScreen.kt   الإعدادات: المظهر، الخط، الأمان (تفعيل القفل مع
+                               إنشاء الرمز، تغيير الرمز، اقفل الآن، البصمة، المهلة)،
+                               البيانات (نسخ/استعادة/سلة)، حول التطبيق.
 
 --------------------------------------------------
-6. المكونات المشتركة
+6. المكوّنات المشتركة والثيم
 --------------------------------------------------
-app/src/main/java/com/daftar/notes/ui/components/NoteCard.kt
-  - بطاقة الملاحظة في القائمة: العنوان، المقطع، التاريخ،
-    حالة القفل/التثبيت/المفضلة/اللون.
-app/src/main/java/com/daftar/notes/ui/components/PaperBackground.kt
-  - خلفية الورق المسطرة: خطوط متزامنة مع ارتفاع السطر،
-    تبدأ تحت منطقة العنوان فقط (إصلاح TEST 12).
-app/src/main/java/com/daftar/notes/ui/theme/
-  - الألوان، الخطوط (DaftarFonts: Cairo)، والموضوع.
+ui/components/NoteCard.kt         بطاقة الملاحظة (عنوان، مقطع، صورة مصغّرة، تاريخ،
+                                  شارات التثبيت/المفضلة/اللون).
+ui/components/PaperBackground.kt  خلفية الورق المسطّرة (تبدأ تحت منطقة العنوان).
+ui/components/NoteColorPalette.kt ألوان وسوم الملاحظات.
+ui/theme/Theme.kt                 الألوان (فاتح/غامق) والخطوط (Amiri/Cairo/Noto/Tajawal).
 
 --------------------------------------------------
 7. الأدوات المساعدة
 --------------------------------------------------
-app/src/main/java/com/daftar/notes/util/BackupManager.kt
-  - النسخ الاحتياطي والاستعادة:
-    - تصدير ZIP كامل (daftar.json + images/<noteId>/).
-    - دعم استيراد JSON قديم (v2) للتوافق.
-    - الاستيراد يعيد الصور مع الملاحظات.
-app/src/main/java/com/daftar/notes/util/PdfExporter.kt
-  - تصدير الملاحظة إلى PDF مع التنسيق.
-app/src/main/java/com/daftar/notes/util/TextUtils.kt
-  - دوال نصية مساعدة (HTML <-> نص، الاقتباس).
-app/src/main/java/com/daftar/notes/util/ImageUtils.kt
-  - ضغط ومعالجة الصور قبل التخزين.
+util/BackupManager.kt  نسخ/استعادة: ZIP (daftar.json + images/<noteId>/) وقراءة
+                       JSON v2 القديم، اسم ملف مقترح، تنظيف المجلدات المؤقتة،
+                       واستيراد يعيد الملاحظات مع صورها.
+util/PdfExporter.kt    تصدير الملاحظة إلى PDF (A4) مع العناوين والقوائم والصور وRTL.
+util/TextUtils.kt      تجريد HTML (مع دمج المسافات)، مقاطع نتائج البحث،
+                       وتنسيق التواريخ (مطلق ونسبي بالعربية).
 
 --------------------------------------------------
-8. الموارد
+8. الموارد والمانيفست
 --------------------------------------------------
-app/src/main/res/
-  - القيم (strings)، الأيقونات، الخطوط (assets/fonts/).
-app/src/main/AndroidManifest.xml
-  - صلاحيات التطبيق والأنشطة.
+res/values, res/font, res/mipmap      النصوص، الخطوط العربية، الأيقونات.
+res/xml/file_paths.xml                مسارات FileProvider (مشاركة النسخ وPDF).
+res/xml/backup_rules.xml              استثناء كل البيانات من نسخ Android 9–11.
+res/xml/data_extraction_rules.xml     استثناء كل البيانات من النسخ السحابي ونقل
+                                      الجهاز في Android 12+ (خصوصية الملاحظات).
+AndroidManifest.xml                   الصلاحيات: BIOMETRIC + FINGERPRINT (لأندرويد 8)
+                                      و CAMERA (تُطلب وقت التشغيل)، allowBackup=false.
 
 --------------------------------------------------
 9. ملفات البناء
 --------------------------------------------------
-build.gradle.kts (مشروع)  - إضافات Android/KSP/Kotlin.
-app/build.gradle.kts      - إعدادات الوحدة: SDKs، المكتبات،
-                            الاختبارات (JUnit + MockK + coroutines-test).
-gradle.properties         - إعدادات JVM (معدلة لتناسب البيئة 4GB).
-settings.gradle.kts       - اسم الوحدة والمستودعات.
-gradle/wrapper/           - Gradle 8.5 wrapper.
+build.gradle.kts        إضافات AGP 8.3.2 / Kotlin 2.1.20 / KSP / Serialization.
+app/build.gradle.kts    SDK 35، minSdk 26، الإصدار 2.6 (versionCode 6)، المكتبات:
+                        Compose BOM، Room، DataStore، Coil، riche-editor، jsoup،
+                        biometric، fragment-ktx، security-crypto، serialization،
+                        JUnit + MockK + coroutines-test.
+app/proguard-rules.pro  قواعد R8 (serialization/Room) — جاهزة عند تفعيل التصغير.
+gradle.properties       ذاكرة JVM لبيئات 4GB وما دون + workers=1.
+settings.gradle.kts     اسم المشروع والمستودعات.
+gradle/wrapper/         Gradle 8.5.
 
 --------------------------------------------------
-10. الاختبارات
+10. الاختبارات (21 اختبار JVM — بلا أندرويد)
 --------------------------------------------------
-app/src/test/java/com/daftar/notes/ui/screens/EditorViewModelSaveTest.kt
-  - 9 اختبارات JVM خالصة (بدون أندرويد):
-    1. contentUpdateFlowsToDatabase         - الحفظ التلقائي يصل لـRoom
-    2. identicalContentIsNotSavedAgain      - عدم تكرار الحفظ المتطابق
-    3. saveNowAsyncFlushesImmediately       - الحفظ الفوري عند الخروج
-    4. titleUpdateAlsoPersistsToDatabase    - حفظ العنوان
-    5. manualSnapshotUndoRedoWorks          - التراجع/الإعادة اليدوي
-    6. undoAlsoRestoresTheTitle             - التراجع يعيد العنوان أيضًا
-    7. typingCreatesUndoSnapshotsAutomatically - لقطات تلقائية للكتابة
-    8. undoStackIsBounded                   - حد المكدس 50
-    9. arabicNormalizationIsDeterministic   - تطبيع العربية للترتيب
-  - جميعها نجحت (11/11 مع الاختبارات الإضافية السابقة).
+test/.../EditorViewModelSaveTest.kt  (9)
+  الحفظ التلقائي يصل لـRoom، عدم تكرار الحفظ المتطابق، الحفظ الفوري، حفظ العنوان،
+  Undo/Redo اليدوي، استرجاع العنوان، لقطات تلقائية أثناء الكتابة، حد المكدس،
+  وتطبيع العربية للترتيب.
+test/.../TextUtilsTest.kt  (8)
+  تجريد HTML، تحويل الفواصل لأسطر، فك الكيانات، دمج المسافات، مقاطع البحث
+  والاقتطاع، والتواريخ النسبية.
+test/.../BackupFormatTest.kt  (4)
+  توافق صيغة النسخ: دورة كاملة v3، قراءة نسخة v2 قديمة بلا حقل images،
+  تجاهل الحقول المستقبلية، وفشل واضح عند JSON تالف.
 
 --------------------------------------------------
 11. CI/CD
 --------------------------------------------------
 .github/workflows/build-apk.yml
-  - بناء APK تلقائيًا عبر GitHub Actions عند كل push.
-  - يرفع APK كـ artifact قابل للتنزيل.
+  عند كل push على main (أو تشغيل يدوي):
+  1) testDebugUnitTest (الاختبارات)
+  2) assembleDebug + assembleRelease (APK غير موقّع)
+  3) رفع: تقرير الاختبارات + APK debug + APK release
+  مع concurrency لإلغاء البناء القديم عند دفع جديد.
 
 --------------------------------------------------
-12. الإصلاحات في هذه النسخة (2.6)
+12. ما تغيّر في نسخة 2.6 (هذه المراجعة)
 --------------------------------------------------
-- TEST 1  : الحفظ التلقائي يعمل (debounce 750ms) + اختبارات مؤكدة.
-- TEST 2  : إنشاء ملاحظة من القائمة والمحرر (مسارات محفوظة).
-- TEST 5  : التثبيت والمفضلة يعملان (isPinned/isFavorite في Room).
-- TEST 8  : ألوان Labels تعمل (colorLabel في الملاحظة + NoteCard).
-- TEST 10 : أُضيف الترتيب: الأقدم/الأبجدي/الأبجدي العربي
-            (normalizeArabic يزيل التشكيل ويطوي الهمزات).
-- TEST 11 : البحث: الإصلاح (نافذة البحث تنشط فورًا عند الكتابة).
-- TEST 12 : أسطر الورق تقتصر على منطقة الكتابة تحت العنوان
-            (titleHeightPx).
-- TEST 19 : Undo/Redo يعمل على الكتابة العادية (لقطات تلقائية
-            قبل التعديل) وليس فقط أزرار التنسيق.
-- TEST 21 : النسخ الاحتياطي ZIP يشمل الصور + legacy JSON.
-- خطأ بناء: JDK 21 استُبدل بـJDK 17 (androidJdkImage transform).
-- ذاكرة: JVM args عُدلت إلى 1g لمنع OOM.
+الأمان:
+- قفل التطبيق كان لا يعمل إطلاقًا (لا شاشة لتعيين الرمز + بوابة لا تظهر) → أُصلح
+  بمسارين SETUP/VERIFY وحوارات في الإعدادات.
+- البصمة كانت كودًا ميتًا (FragmentActivity) → MainActivity : FragmentActivity.
+- مهلة القفل أُعيد بناؤها كآلة حالة (كان recordForegroundExit في STARTED لا STOP).
+- PBKDF2 بملح عشوائي بدل SHA-256، قفل مؤقت بعد المحاولات الفاشلة، وتطلب الرمز
+  الحالي قبل تغييره أو إطفاء القفل.
+- منع النسخ السحابي/نقل الجهاز لبيانات التطبيق (dataExtractionRules + backup_rules).
+
+البيانات:
+- صيغة النسخ الاحتياطي application/zip (+ خيار الحفظ في مجلد عبر CreateDocument).
+- الاستعادة بحوار تأكيد يعرض عدد الملاحظات.
+- إصلاح مسار حفظ الصور (كان نسبيًا فلا تُحفظ)، وحذف متسلسل للصور والملفات،
+  وصيانة المجلدات اليتيمة.
+
+الكود والبناء:
+- تقسيم EditorScreen و HomeScreen إلى ملفات أصغر (HomeComponents/EditorToolbar).
+- بحث أسرع (فهرس نصي بدل stripHtml عند كل ضغطة مفتاح).
+- طلب إذن الكاميرا في وقت التشغيل (كان مفقودًا).
+- NoteFileStore بدل الاعتماد على AppContainer العام داخل المستودع.
+- حذف كود ميت (SettingsViewModel الفارغ، lastLockStateTime، searchNotes في المستودع).
+- proguard-rules.pro أُنشئ، وCI يشغّل الاختبارات ويبني debug+release.
+
+--------------------------------------------------
+13. أفكار لاحقة (غير منفّذة)
+--------------------------------------------------
+- استخراج النصوص إلى res/values/strings.xml لتدويل كامل (النصوص حاليًا داخل الكود).
+- دعم آمن: تشفير قاعدة البيانات (SQLCipher) في حال الرغبة بحماية البيانات المخزّنة.
+- قفل مؤقت يمنع التقاط شاشة القفل أو لقطات الشاشة في شاشة القفل (FLAG_SECURE).
+- مجلدات كاملة في الواجهة (الكيان Folder موجود لكن التنقل بالمجلدات غير مكتمل).
+- سحب/إفلات لإعادة ترتيب الملاحظات.

@@ -250,6 +250,14 @@ fun SettingsScreen(
                     onOpenTrash()
                 }
             }
+            Text(
+                text = "النسخ السحابي لنظام أندرويد معطّل في «دفتر» حمايةً لخصوصية ملاحظاتك؛ " +
+                    "احفظ نسخة احتياطية من الأعلى للاحتفاظ بملاحظاتك أو لنقلها لجهاز آخر.",
+                fontFamily = DaftarFonts.Cairo,
+                fontSize = 11.sp,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
