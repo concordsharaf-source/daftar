@@ -2,6 +2,7 @@ package com.daftar.notes.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import com.daftar.notes.security.AppLockManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -142,7 +143,8 @@ fun EditorScreen(
     fontFamily: FontFamily,
     fontSizeSp: Int,
     onNavigateBack: () -> Unit,
-    viewModel: EditorViewModel
+    viewModel: EditorViewModel,
+    appLockManager: AppLockManager
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -915,6 +917,7 @@ fun EditorScreen(
                         )
                     }
 
+                appLockManager.beginExternalFlow()
                 context.startActivity(
                     Intent.createChooser(
                         intent,
@@ -997,6 +1000,7 @@ fun EditorScreen(
 
                             try {
 
+                                appLockManager.beginExternalFlow()
                                 context.startActivity(
                                     viewIntent
                                 )
@@ -1346,6 +1350,8 @@ fun EditorScreen(
 
                                 showImagePicker = false
 
+                                appLockManager.beginExternalFlow()
+
                                 pickMediaLauncher.launch(
                                     "image/*"
                                 )
@@ -1363,6 +1369,7 @@ fun EditorScreen(
 
                                 showImagePicker = false
 
+                                appLockManager.beginExternalFlow()
                                 takePhotoLauncher.launch(null)
                             }
                         )

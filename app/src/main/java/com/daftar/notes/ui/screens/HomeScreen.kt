@@ -79,6 +79,7 @@ import com.daftar.notes.data.NoteImage
 import com.daftar.notes.ui.components.NoteCard
 import com.daftar.notes.ui.components.NoteColorPalette
 import com.daftar.notes.ui.theme.DaftarFonts
+import com.daftar.notes.security.AppLockManager
 import com.daftar.notes.util.BackupManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,7 +103,8 @@ private data class NoteRow(val note: Note, val thumbnailPath: String?) {
 fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenNote: (Long) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    appLockManager: AppLockManager
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
@@ -317,7 +319,13 @@ fun HomeScreen(
                                 val newStatus = if (row.note.status == "done") "draft" else "done"
                                 scope.launch { viewModel.updateStatus(row.note.id, newStatus) }
                             },
-                            onDelete = { deleteTarget = row.note }
+                            onDelete = { deleteTarget = row.note },
+                            onShare = { intent ->
+                                appLockManager.beginExternalFlow()
+                                context.startActivity(
+                                    android.content.Intent.createChooser(intent, "مشاركة الملاحظة")
+                                )
+                            }
                         )
                     }
                 }
@@ -352,7 +360,13 @@ fun HomeScreen(
                             val newStatus = if (row.note.status == "done") "draft" else "done"
                             scope.launch { viewModel.updateStatus(row.note.id, newStatus) }
                         },
-                        onDelete = { deleteTarget = row.note }
+                        onDelete = { deleteTarget = row.note },
+                        onShare = { intent ->
+                            appLockManager.beginExternalFlow()
+                            context.startActivity(
+                                android.content.Intent.createChooser(intent, "مشاركة الملاحظة")
+                            )
+                        }
                     )
                 }
 
@@ -484,6 +498,7 @@ fun HomeScreen(
                 ) {
                     scope.launch {
                         try {
+                            appLockManager.beginExternalFlow()
                             val path = BackupManager.createBackup(context, AppContainer.get().notesRepository)
                             val file = java.io.File(path)
                             val uri = androidx.core.content.FileProvider.getUriForFile(
@@ -517,7 +532,7 @@ fun HomeScreen(
 
     // ---------- Restore picker (must be created unconditionally) ----------
     val restorePicker = rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (!showBackupSheet) return@rememberLauncherForActivityResult
         uri?.let { u ->
@@ -544,8 +559,18 @@ fun HomeScreen(
         }
     }
 
-    if (showBackupSheet) {
-        restorePicker.launch("application/json")
+    LaunchedEffect(showBackupSheet) {
+        if (showBackupSheet) {
+        appLockManager.beginExternalFlow()
+        restorePicker.launch(
+            arrayOf(
+                "application/zip",
+                "application/json",
+                "application/octet-stream",
+                "*/*"
+            )
+        )
+        }
     }
 
     // ---------- Delete confirmation ----------
@@ -819,7 +844,8 @@ private fun NoteOverflowMenu(
     isFavorite: Boolean,
     onColor: () -> Unit,
     onToggleStatus: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShare: (android.content.Intent) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -858,7 +884,7 @@ private fun NoteOverflowMenu(
                     putExtra(android.content.Intent.EXTRA_TEXT, "$noteTitle\n\n$noteContentText")
                     if (noteTitle.isNotBlank()) putExtra(android.content.Intent.EXTRA_SUBJECT, noteTitle)
                 }
-                context.startActivity(android.content.Intent.createChooser(intent, "مشاركة الملاحظة"))
+                onShare(intent)
             },
             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
         )

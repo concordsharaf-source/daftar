@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
@@ -36,10 +38,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +61,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.daftar.notes.security.AppLockManager
+import com.daftar.notes.security.PinStore
 import com.daftar.notes.security.isBiometricAvailable
 import com.daftar.notes.ui.theme.DaftarFonts
 import com.daftar.notes.ui.theme.DaftarFontCatalog
@@ -64,6 +73,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     settings: SettingsStore,
+    appLockManager: AppLockManager,
     onNavigateBack: () -> Unit,
     onRequestBackup: () -> Unit,
     onRequestRestore: () -> Unit,
@@ -83,6 +93,15 @@ fun SettingsScreen(
     var showFontPicker by remember { mutableStateOf(false) }
     var showModeDialog by remember { mutableStateOf(false) }
     var showRelockDialog by remember { mutableStateOf(false) }
+
+    // إدارة الرمز السري: إنشاء / تغيير (تحقق ثم إنشاء) / تحقق قبل الإطفاء
+    var showPinCreate by remember { mutableStateOf(false) }
+    var showPinVerifyToChange by remember { mutableStateOf(false) }
+    var showPinVerifyToDisable by remember { mutableStateOf(false) }
+
+    fun toast(message: String) {
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
 
     Column(
         modifier = Modifier
@@ -134,40 +153,69 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Default.Lock,
                     title = "قفل التطبيق",
-                    subtitle = "قفل الدفتر برمز سري عند فتحه"
+                    subtitle = if (pinEnabled) "مفعّل — يُطلب الرمز عند فتح دفترك"
+                    else "قفل الدفتر برمز سري عند فتحه"
                 ) {
-                    scope.launch { settings.setPinLockEnabled(!pinEnabled) }
+                    if (pinEnabled) showPinVerifyToDisable = true else showPinCreate = true
                 }
                 Switch(
                     checked = pinEnabled,
-                    onCheckedChange = { scope.launch { settings.setPinLockEnabled(it) } }
+                    onCheckedChange = { checked ->
+                        if (checked) showPinCreate = true else showPinVerifyToDisable = true
+                    }
                 )
+            }
+            if (pinEnabled) {
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Default.Password,
+                        title = "تغيير الرمز السري",
+                        subtitle = "يتطلب إدخال الرمز الحالي أولًا",
+                        onClick = { showPinVerifyToChange = true }
+                    )
+                }
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Default.Timer,
+                        title = "قفل تلقائي بعد",
+                        subtitle = relockLabel(relockMinutes),
+                        onClick = { showRelockDialog = true }
+                    )
+                }
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Default.LockOpen,
+                        title = "اقفل الآن",
+                        subtitle = "إغلاق دفترك فورًا والطلب رمزًا عند العودة",
+                        onClick = {
+                            appLockManager.lockNow()
+                            onNavigateBack()
+                        }
+                    )
+                }
             }
             if (biometricAvailable) {
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Default.Fingerprint,
                         title = "البصمة أو الوجه",
-                        subtitle = if (biometricEnabled) "تفعيل فتح التطبيق بالبصمة"
-                        else "فتح سريع باستخدام البصمة"
+                        subtitle = when {
+                            !pinEnabled -> "فعّل قفل التطبيق أولًا لاستخدام البصمة"
+                            biometricEnabled -> "مفعّل — فتح سريع بالبصمة"
+                            else -> "فتح سريع باستخدام البصمة"
+                        }
                     ) {
-                        scope.launch { settings.setBiometricEnabled(!biometricEnabled) }
+                        if (pinEnabled) {
+                            scope.launch { settings.setBiometricEnabled(!biometricEnabled) }
+                        } else {
+                            toast("فعّل قفل التطبيق أولًا")
+                        }
                     }
                     Switch(
                         checked = biometricEnabled,
                         enabled = pinEnabled,
                         onCheckedChange = { scope.launch { settings.setBiometricEnabled(it) } }
                     )
-                }
-                if (pinEnabled) {
-                    SettingsCard {
-                        SettingsRow(
-                            icon = Icons.Default.Timer,
-                            title = "قفل تلقائي بعد",
-                            subtitle = relockLabel(relockMinutes),
-                            onClick = { showRelockDialog = true }
-                        )
-                    }
                 }
             }
 
@@ -274,6 +322,143 @@ fun SettingsScreen(
         )
     }
 
+    // إنشاء رمز جديد (عند تفعيل القفل لأول مرة)
+    if (showPinCreate) {
+        PinEntryDialog(
+            title = "إنشاء رمز القفل",
+            subtitle = "اختر رمزًا من 4 أرقام لحماية دفترك",
+            confirmMode = true,
+            onDismiss = { showPinCreate = false },
+            onSubmit = { pin ->
+                scope.launch {
+                    appLockManager.configurePin(pin)
+                    showPinCreate = false
+                    toast("تم تفعيل قفل التطبيق")
+                }
+            }
+        )
+    }
+
+    // تغيير الرمز: تحقّق من الحالي ثم إنشاء الجديد
+    if (showPinVerifyToChange) {
+        PinEntryDialog(
+            title = "أدخل الرمز الحالي",
+            subtitle = "للتحقق قبل تغيير الرمز",
+            confirmMode = false,
+            verifyCurrent = true,
+            onDismiss = { showPinVerifyToChange = false },
+            onSubmit = {
+                showPinVerifyToChange = false
+                showPinCreate = true
+            }
+        )
+    }
+
+    // إطفاء القفل: يتطلب الرمز الحالي (منع تجاوز القفل من داخل التطبيق)
+    if (showPinVerifyToDisable) {
+        PinEntryDialog(
+            title = "أدخل الرمز الحالي",
+            subtitle = "لإطفاء قفل التطبيق وإزالة الرمز",
+            confirmMode = false,
+            verifyCurrent = true,
+            onDismiss = { showPinVerifyToDisable = false },
+            onSubmit = {
+                showPinVerifyToDisable = false
+                scope.launch {
+                    appLockManager.disablePinLock()
+                    toast("تم إطفاء قفل التطبيق")
+                }
+            }
+        )
+    }
+
+}
+
+/**
+ * حوار إدخال رمز مكوّن من 4 أرقام.
+ *
+ * @param confirmMode true عند الإنشاء (حقلان: الرمز + التأكيد)
+ * @param verifyCurrent true عند التحقق من الرمز الحالي (يتحقق من PinStore بنفسه)
+ */
+@Composable
+private fun PinEntryDialog(
+    title: String,
+    subtitle: String,
+    confirmMode: Boolean,
+    verifyCurrent: Boolean = false,
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var pin by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun digitsOnly(value: String) = value.filter { it.isDigit() }.take(PinStore.PIN_LENGTH)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontFamily = DaftarFonts.Cairo, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(subtitle, fontFamily = DaftarFonts.Cairo, fontSize = 13.sp)
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = digitsOnly(it); error = null },
+                    label = { Text(if (verifyCurrent) "الرمز الحالي" else "الرمز الجديد") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation()
+                )
+                if (confirmMode) {
+                    OutlinedTextField(
+                        value = confirmation,
+                        onValueChange = { confirmation = digitsOnly(it); error = null },
+                        label = { Text("تأكيد الرمز") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                }
+                error?.let {
+                    Text(it, fontFamily = DaftarFonts.Cairo, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when {
+                    pin.length != PinStore.PIN_LENGTH ->
+                        error = "الرمز يجب أن يكون ${PinStore.PIN_LENGTH} أرقام"
+
+                    verifyCurrent -> {
+                        if (PinStore.lockRemainingMs(context) > 0L) {
+                            error = "الإدخال مقفل مؤقتًا، انتظر قليلًا"
+                        } else if (PinStore.verify(context, pin)) {
+                            onSubmit(pin)
+                        } else {
+                            error = "الرمز غير صحيح — المتبقي: ${PinStore.remainingAttempts(context)}"
+                            pin = ""
+                        }
+                    }
+
+                    confirmMode && pin != confirmation -> {
+                        error = "الرمزان غير متطابقين"
+                        confirmation = ""
+                    }
+
+                    else -> onSubmit(pin)
+                }
+            }) {
+                Text(if (verifyCurrent) "تحقق" else "حفظ", fontFamily = DaftarFonts.Cairo)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء", fontFamily = DaftarFonts.Cairo)
+            }
+        }
+    )
 }
 
 @Composable
