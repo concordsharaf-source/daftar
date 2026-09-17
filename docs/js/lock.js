@@ -38,6 +38,7 @@ const KEYS = {
   prfSalt: 'lockPrfSalt',
   attempts: 'lockAttempts',
   until: 'lockUntil',
+  noteCred: 'noteCredId',
 };
 
 const state = {
@@ -54,6 +55,7 @@ const state = {
   lockUntil: 0,
   unlocked: false,
   lastUnlockAt: 0,
+  noteCredId: null,   // اعتماد بصمة يُستخدم لقفل الملاحظات وحده (قد يكون بلا قفل تطبيق)
 };
 
 // ---------------------------------------------------------------- التهيئة
@@ -71,6 +73,7 @@ export async function init() {
   state.attempts = Number(s[KEYS.attempts] ?? 0);
   state.lockUntil = Number(s[KEYS.until] ?? 0);
   state.lastUnlockAt = Number(s.lastUnlockTime || 0);
+  state.noteCredId = s[KEYS.noteCred] || null;
   setFieldEncryption(state.enabled && state.encrypted);
   state.unlocked = !state.enabled; // التطبيق مفتوح إن لم يكن القفل مفعّلًا
   return snapshot();
@@ -344,6 +347,67 @@ async function capturePrfSecret() {
     return { secret };
   } catch {
     return { secret: null };
+  }
+}
+
+// ---------------------------------------------------------------- تحقق الجهاز (قفل الملاحظات)
+
+/** هل يمكن التحقق بالجهاز (بصمة/وجه/Windows Hello)؟ */
+export async function deviceVerificationAvailable() {
+  return checkPlatformAuthenticator();
+}
+
+/** هل سبق تسجيل اعتماد للجهاز؟ (لتفادي تسجيل جديد بلا داعٍ) */
+export function hasDeviceCredential() {
+  return !!(state.credId || state.noteCredId);
+}
+
+/**
+ * تحقق بالجهاز يظهر فيه حوار النظام مباشرة (بلا أي شاشة داخل التطبيق).
+ * يُستخدم لقفل الملاحظات — مستقل تمامًا عن قفل التطبيق:
+ *  - إن كان هناك اعتماد مسجّل (من قفل التطبيق أو من قفل ملاحظة سابق) نستخدمه.
+ *  - وإلا نسجّل اعتمادًا جديدًا (حوار النظام مرة واحدة) ثم نتحقق.
+ * لا يغيّر حالة قفل التطبيق ولا يمسح/يضع مفتاح الجلسة.
+ */
+export async function verifyWithDevice({ reason = 'لمتابعة العملية' } = {}) {
+  const available = await checkPlatformAuthenticator();
+  if (!available) return { ok: false, reason: 'unsupported' };
+  try {
+    let credId = state.credId || state.noteCredId;
+    if (!credId) {
+      const created = await navigator.credentials.create({
+        publicKey: {
+          challenge: randomBytes(32),
+          rp: { name: 'دفتر', id: location.hostname },
+          user: { id: randomBytes(16), name: 'daftar-notes', displayName: 'ملاحظات دفتر' },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+            residentKey: 'preferred',
+          },
+          timeout: 60_000,
+          attestation: 'none',
+        },
+      });
+      credId = bytesToB64(new Uint8Array(created.rawId));
+      state.noteCredId = credId;
+      await setSetting(KEYS.noteCred, credId);
+    }
+
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: randomBytes(32),
+        allowCredentials: [{ type: 'public-key', id: b64ToBytes(credId) }],
+        userVerification: 'required',
+        timeout: 60_000,
+      },
+    });
+    return { ok: !!assertion };
+  } catch (e) {
+    const name = e?.name || '';
+    const reason = name === 'NotAllowedError' || name === 'AbortError' ? 'cancelled' : String(e?.message || e);
+    return { ok: false, reason };
   }
 }
 

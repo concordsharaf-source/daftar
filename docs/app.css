@@ -203,6 +203,8 @@ button { cursor: pointer; border: none; background: none; }
 
 .card {
   position: relative;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
   background: var(--surface);
   border: 1px solid var(--outline);
   border-radius: var(--radius);
@@ -439,6 +441,8 @@ body.selecting #screen-list { padding-bottom: 132px; }   /* لا يحجب شري
 .card { position: relative; }
 .card.selected .card-check { background: var(--primary); border-color: var(--primary); }
 .card.selected .card-check::after { content: '✓'; font-weight: 700; }
+.card-check { pointer-events: none; }
+.card-more { z-index: 2; }
 .card.locked-note .card-title { color: var(--text-dim); }
 
 .select-bar {
@@ -450,6 +454,7 @@ body.selecting #screen-list { padding-bottom: 132px; }   /* لا يحجب شري
 }
 .select-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .select-head #select-count { flex: 1; font-size: 13px; color: var(--text-dim); }
+.select-hint { font-size: 11.5px; color: var(--text-dim); margin: 0 0 8px; }
 .btn.small { padding: 6px 12px; font-size: 12.5px; }
 .select-actions { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
 .select-actions::-webkit-scrollbar { display: none; }
@@ -462,6 +467,7 @@ body.selecting #screen-list { padding-bottom: 132px; }   /* لا يحجب شري
 .select-actions button:disabled { opacity: .4; }
 .select-actions button.danger { color: var(--error); }
 body.selecting .fab { display: none; }
+body.selecting .card-more { display: none; }   /* في وضع التحديد لا حاجة لزر الخيارات */
 .gate-forgot {
   display: block; margin: 18px auto 0; font-size: 12.5px;
   color: var(--text-dim); text-decoration: underline;

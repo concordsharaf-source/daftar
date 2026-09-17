@@ -110,9 +110,19 @@ check(!(await page.$eval('#sheet-settings', (el) => el.classList.contains('open'
 check(await page.isHidden('#screen-editor'), 'وما زلنا في القائمة');
 
 // ================================================= 2) تحديد أكثر من ملاحظة
-await page.evaluate(() => document.querySelectorAll('.card')[0].dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+// ضغطة مطوّلة مع اهتزاز إصبع بسيط (٨ بكسل) — يجب أن تعمل رغم الاهتزاز
+await page.evaluate(() => {
+  const card = document.querySelectorAll('.card')[0];
+  const box = card.getBoundingClientRect();
+  const x = box.left + box.width / 2;
+  const y = box.top + box.height / 2;
+  card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x, clientY: y }));
+  // اهتزاز طبيعي أقل من حدّ التسامح
+  card.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x + 5, clientY: y + 3 }));
+  card.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x - 4, clientY: y + 6 }));
+});
 await wait(700);
-check(await page.isVisible('#select-bar'), 'الضغط المطوّل يُدخل وضع التحديد');
+check(await page.isVisible('#select-bar'), 'الضغط المطوّل يعمل رغم اهتزاز الإصبع البسيط');
 {
   const count = await page.textContent('#select-count');
   check(/1 ملاحظة/.test(count), 'يظهر عدد المحدّد', count.trim());
@@ -127,6 +137,20 @@ await wait(500);
   check(selected === 3, 'البطاقات المحدّدة معلَّمة بصريًا', String(selected));
 }
 await page.screenshot({ path: `${OUT}/14-multi-select.png` });
+
+// زر «تحديد» في الشريط العلوي: الطريقة الأوضح
+await tap('#select-close');
+await wait(500);
+await tap('#btn-select');
+await wait(500);
+check(await page.isVisible('#select-bar'), 'زر «تحديد» في الشريط العلوي يفتح وضع التحديد');
+check(await page.evaluate(() => document.body.classList.contains('selecting')), 'وضع التحديد معلَّم على الواجهة');
+
+// داخل وضع التحديد: النقر على البطاقات يحدّدها
+await page.evaluate(() => document.querySelectorAll('.card').forEach((c) => c.click()));
+await wait(700);
+check(/3 ملاحظات/.test(await page.textContent('#select-count')), 'النقر على البطاقات يحدّدها');
+check(await page.isHidden('#screen-editor'), 'النقر داخل وضع التحديد لا يفتح الملاحظة');
 
 // عملية جماعية: تثبيت
 await page.evaluate(() => {
@@ -202,16 +226,37 @@ await page.keyboard.press('Escape');
 await wait(700);
 
 // ================================================= 3) قفل الملاحظة الواحدة
-// أولًا: بلا قفل تطبيق ⇒ يشرح المطلوب
+// بلا قفل تطبيق: القفل يعمل مستقلًّا، والتطبيق يبقى مفتوحًا
+const beforeLockTitle = await page.$eval('.card-title', (el) => el.textContent.trim());
 await page.evaluate(() => document.querySelectorAll('.card')[0].querySelector('.card-more').click());
 await wait(500);
 await page.evaluate(() => {
   [...document.querySelectorAll('#menu-note .sheet-row')].find((b) => b.textContent.includes('قفل الملاحظة')).click();
 });
-await page.waitForSelector('#dialog-confirm.open', { timeout: 5000 });
-check(/قفل التطبيق/.test(await page.textContent('#confirm-title')), 'قفل الملاحظة بلا قفل تطبيق يشرح الحاجة للتفعيل');
-await tap('#confirm-cancel');
+await wait(1200);
+check(/مقفلة/.test(await page.$eval('.card-title', (el) => el.textContent)),
+  'قفل الملاحظة يعمل بلا قفل تطبيق', beforeLockTitle);
+check(await page.isHidden('#gate'), 'القفل لا يعرض أي شاشة تحقق ولا يقفل التطبيق');
+check(await page.isVisible('#screen-list'), 'التطبيق يبقى مفتوحًا وعاملًا بعد القفل');
+
+// بلا بصمة وبلا قفل تطبيق: تُكشف بضغطة (إخفاء فقط)، ولا تظهر أي بوابة
+await page.evaluate(() => document.querySelectorAll('.card')[0].click());
+await wait(1200);
+check(await page.isHidden('#gate'), 'فتح ملاحظة مقفلة بلا وسيلة تحقق لا يعرض بوابة');
+check(!(await page.isHidden('#screen-editor')), 'تُعرض الملاحظة بعد الضغط مباشرة');
+check((await page.inputValue('#note-title')) === beforeLockTitle, 'المحتوى سليم', beforeLockTitle);
+await tap('#btn-back');
+await wait(800);
+check(/مقفلة/.test(await page.$eval('.card-title', (el) => el.textContent)), 'تُخفى من جديد بعد الخروج');
+
+// إلغاء القفل بلا وسيلة تحقق: يطلب تأكيدًا بسيطًا فقط
+await page.evaluate(() => document.querySelectorAll('.card')[0].querySelector('.card-more').click());
 await wait(500);
+await page.evaluate(() => {
+  [...document.querySelectorAll('#menu-note .sheet-row')].find((b) => b.textContent.includes('إلغاء قفل')).click();
+});
+await wait(1200);
+check(!/مقفلة/.test(await page.$eval('.card-title', (el) => el.textContent)), 'إلغاء قفل الملاحظة يعيد العنوان');
 
 // فعّل قفل التطبيق برمز
 const PIN = '482913';

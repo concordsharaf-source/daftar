@@ -558,24 +558,15 @@ async function closeEditor({ skipSave = false, fromHistory = false } = {}) {
 
 // ---------------------------------------------------------------- قفل الملاحظة الواحدة
 
-/** قفل الملاحظة يعتمد على قفل التطبيق لأنه مصدر المفتاح والتحقق. */
-function lockNotesAvailable() {
-  return lock.isEnabled();
-}
-
-/** قفل/فتح ملاحظة واحدة، مع طلب تفعيل قفل التطبيق عند الحاجة. */
+/**
+ * قفل الملاحظة مستقل عن قفل التطبيق:
+ *  - القفل لا يطلب أي تحقق (القفل يحمي، لا يفتح).
+ *  - الفتح يطلب تحققًا من **الجهاز** مباشرة (حوار البصمة/الوجه من النظام، بلا صفحات)،
+ *    وإن لم يدعم الجهاز ذلك وكان قفل التطبيق مفعّلًا فبالبانر/الرمز، وإلا فبضغطة.
+ *  - التطبيق نفسه يبقى مفتوحًا وعاملًا؛ قفل الملاحظة لا يقفل التطبيق أبدًا.
+ */
 async function toggleNoteLock(note) {
-  if (!lockNotesAvailable()) {
-    const ok = await confirmDialog({
-      title: 'يلزم تفعيل قفل التطبيق أولًا',
-      body: 'قفل الملاحظات يعتمد على باترن/رمز التطبيق. فعّل «قفل التطبيق» من الإعدادات ثم '
-        + 'عُد لقفل أي ملاحظة: يصبح نصّها مشفّرًا، وتُخفى من القائمة حتى تفتحها.',
-      confirmText: 'اذهب للإعدادات',
-      cancelText: 'لاحقًا',
-    });
-    if (ok) await openSettings();
-    return;
-  }
+  if (!note) return;
 
   if (note.locked) {
     if (!(await ensureNoteUnlocked(note))) return;
@@ -586,30 +577,58 @@ async function toggleNoteLock(note) {
   }
 
   await patchNote(note.id, { locked: true });
-  // تختفي فورًا من القائمة (وإن كانت مفتوحة الآن فسيبقى محتواها معروضًا حتى تخرج منها)
+  // تُخفى فورًا من القائمة والبحث (وإن كانت مفتوحة الآن يبقى محتواها أمامك حتى تخرج)
   state.unlockedNotes.delete(note.id);
-  toast('تم قفل الملاحظة — لن يظهر نصّها في القائمة');
+
+  const device = await lock.deviceVerificationAvailable();
+  if (device) toast('تم قفل الملاحظة — تُفتح ببصمة الجهاز');
+  else if (lock.isEnabled()) toast('تم قفل الملاحظة — تُفتح بباترن/رمز التطبيق');
+  else toast('تم قفل الملاحظة — مخفية عن القائمة والبحث', 3200);
 }
 
 /**
- * يضمن أن الملاحظة المقفلة مفتوحة الآن (يطلب البوابة إن لزم).
- * @returns {Promise<boolean>} true عند السماح بالمتابعة
+ * يضمن أن الملاحظة المقفلة مفتوحة الآن.
+ * الأولوية: حوار الجهاز مباشرة (بصمة/وجه) — بلا أي صفحة داخل التطبيق.
  */
 async function ensureNoteUnlocked(note, { silent = false } = {}) {
   if (!note?.locked) return true;
   if (state.unlockedNotes.has(note.id)) return true;
-  if (!lock.isEnabled()) return true;   // لا قفل تطبيق ⇒ لا وسيلة للتحقق
-  if (!silent) toast('الملاحظة مقفلة — أدخل ما يفتح دفترك');
-  const ok = await showGate({ mode: 'verify', allowCancel: true, reason: 'note' });
-  if (!ok) return false;
+
+  // 1) بصمة/وجه الجهاز: يظهر حوار النظام فورًا
+  const device = await lock.deviceVerificationAvailable();
+  if (device) {
+    if (!silent) toast('أكّد هويتك على جهازك…', 1400);
+    const res = await lock.verifyWithDevice();
+    if (res.ok) {
+      state.unlockedNotes.add(note.id);
+      return true;
+    }
+    if (res.reason !== 'unsupported') {
+      if (res.reason !== 'cancelled' && !silent) toast('تعذّر التحقق بالجهاز', 2600);
+      if (res.reason === 'cancelled') toast('أُلغيت العملية');
+      return false;
+    }
+  }
+
+  // 2) قفل التطبيق بالباترن/الرمز (لا يوجد بديل آخر داخل المتصفح)
+  if (lock.isEnabled() && lock.isUnlocked() && lock.getState().method !== 'biometric') {
+    if (!silent) toast('الملاحظة مقفلة — أدخل ما يفتح دفترك');
+    const okGate = await showGate({ mode: 'verify', allowCancel: true, reason: 'note' });
+    if (!okGate) return false;
+    state.unlockedNotes.add(note.id);
+    return true;
+  }
+
+  // 3) لا وسيلة تحقق متاحة (جهاز بلا بصمة وبلا قفل تطبيق): تُكشف بضغطة، وهي مخفية عن العرض
   state.unlockedNotes.add(note.id);
+  if (!silent) toast('ملاحظة مخفية — عُرضت الآن لهذه الجلسة', 2600);
   return true;
 }
 
 /** نص العرض في القائمة: المقفلة تُخفى تفاصيلها. */
 function hiddenNoteText(note) {
   if (!note?.locked || state.unlockedNotes.has(note.id)) return null;
-  return { title: 'ملاحظة مقفلة 🔒', snippet: 'اضغط وأدخل الباترن لعرضها' };
+  return { title: 'ملاحظة مقفلة 🔒', snippet: 'اضغط للفتح' };
 }
 
 // ---------------------------------------------------------------- التحديد المتعدد
@@ -731,11 +750,6 @@ async function bulkPatch(patch) {
 
 /** قفل/فتح مجموعة ملاحظات. */
 async function bulkSetLock(locked) {
-  if (locked && !lockNotesAvailable()) {
-    exitSelection({ silent: true });
-    await toggleNoteLock({ id: null, locked: false });   // يعرض شرح التفعيل
-    return;
-  }
   const notes = selectedNotes();
   if (!locked) {
     const lockedOnes = notes.filter((n) => n.locked);
@@ -792,30 +806,52 @@ async function bulkDeleteForever() {
   await openTrash();
 }
 
-/** ربط ضغطة مطوّلة (لمسة أو فأرة) بالبطاقة أو صف السلة. */
+/**
+ * الضغط المطوّل يدخل وضع التحديد — بتسامح مع الاهتزاز الطبيعي للإصبع
+ * (لا يُلغى بتحرّك بسيط)، ومع منع قائمة النظام وتحديد النص أثناءه.
+ */
 function bindSelectionGestures(el, id, context) {
+  const HOLD_MS = 400;
+  const MOVE_TOLERANCE = 14;   // بكسل: أي حركة أقل من هذا تُعتبر اهتزاز إصبع
   let timer = null;
-  let moved = false;
+  let startX = 0;
+  let startY = 0;
+  let fired = false;
+
+  const clear = () => { clearTimeout(timer); timer = null; };
+
   const start = (e) => {
-    moved = false;
-    clearTimeout(timer);
+    if (e.target.closest('.card-more, .card-check, button')) return;
+    fired = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    clear();
     timer = setTimeout(() => {
-      if (moved) return;
+      fired = true;
       if (!state.selecting) enterSelection(context, { preselect: [id] });
       else toggleSelection(id);
-      navigator.vibrate?.(15);
-    }, 420);
+      navigator.vibrate?.(18);
+    }, HOLD_MS);
   };
-  const cancel = () => clearTimeout(timer);
+
+  const move = (e) => {
+    if (!timer) return;
+    const far = Math.abs(e.clientX - startX) > MOVE_TOLERANCE || Math.abs(e.clientY - startY) > MOVE_TOLERANCE;
+    if (far) clear();          // تمرير حقيقي: لا نُدخل وضع التحديد
+  };
+
+  const end = (e) => {
+    clear();
+    // إن انطلق التحديد للتوّ نمنع النقرة التالية من فتح الملاحظة
+    if (fired) { e.preventDefault?.(); e.stopPropagation?.(); }
+  };
+
   el.addEventListener('pointerdown', start);
-  el.addEventListener('pointerup', cancel);
-  el.addEventListener('pointerleave', cancel);
-  el.addEventListener('pointercancel', cancel);
-  el.addEventListener('pointermove', () => { moved = true; cancel(); });
-  el.addEventListener('contextmenu', (e) => {
-    // الضغط المطوّل بالزر الأيمن/اللمس لا يفتح قائمة النظام داخل التطبيق
-    if (state.selecting || context === 'list') e.preventDefault();
-  });
+  el.addEventListener('pointermove', move);
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', clear);
+  el.addEventListener('pointerleave', clear);
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 function bindSelectBar() {
@@ -1219,6 +1255,10 @@ function bindEvents() {
   });
 
   bindSelectBar();
+  $('#btn-select').addEventListener('click', () => {
+    if (state.selecting) exitSelection();
+    else enterSelection('list');
+  });
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-trash').addEventListener('click', openTrash);
   $('#btn-backup').addEventListener('click', () => openSheet('#sheet-backup'));
@@ -1406,6 +1446,7 @@ let gateVerifyTimer = null;
 
 /** يعرض بوابة القفل ويعيد Promise<boolean> (true عند نجاح الفتح). */
 function showGate({ mode = 'unlock', reason = '', allowCancel = false } = {}) {
+  if (mode === 'unlock') state.unlockedNotes.clear();
   // بوابة سابقة معلّقة؟ نغلقها (بلا فتح) حتى لا يبقى وعدٌ منتظر للأبد
   if (state.gateResolve) {
     const previous = state.gateResolve;
@@ -1777,6 +1818,7 @@ function bindLockControls() {
   });
   $('#btn-lock-now').addEventListener('click', () => {
     lock.lockNow();
+    state.unlockedNotes.clear();   // الملاحظات المقفلة تُغلق من جديد
     appStarted = false;
     closeSheets();
     showGate({ mode: 'unlock', reason: 'manual' }).then(() => enterApp());
