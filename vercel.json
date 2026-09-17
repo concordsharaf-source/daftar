@@ -1,46 +1,109 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/", "destination": "/docs/index.html" },
-    { "source": "/app.css", "destination": "/docs/app.css" },
-    { "source": "/sw.js", "destination": "/docs/sw.js" },
-    { "source": "/manifest.webmanifest", "destination": "/docs/manifest.webmanifest" },
-    { "source": "/PWA.md", "destination": "/docs/PWA.md" },
-    { "source": "/js/:path*", "destination": "/docs/js/:path*" },
-    { "source": "/fonts/:path*", "destination": "/docs/fonts/:path*" },
-    { "source": "/icons/:path*", "destination": "/docs/icons/:path*" },
-    { "source": "/tests/:path*", "destination": "/docs/tests/:path*" }
+    {
+      "source": "/",
+      "destination": "/docs/index.html"
+    },
+    {
+      "source": "/index.html",
+      "destination": "/docs/index.html"
+    },
+    {
+      "source": "/app.css",
+      "destination": "/docs/app.css"
+    },
+    {
+      "source": "/sw.js",
+      "destination": "/docs/sw.js"
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "destination": "/docs/manifest.webmanifest"
+    },
+    {
+      "source": "/PWA.md",
+      "destination": "/docs/PWA.md"
+    },
+    {
+      "source": "/js/:path*",
+      "destination": "/docs/js/:path*"
+    },
+    {
+      "source": "/fonts/:path*",
+      "destination": "/docs/fonts/:path*"
+    },
+    {
+      "source": "/icons/:path*",
+      "destination": "/docs/icons/:path*"
+    },
+    {
+      "source": "/tests/:path*",
+      "destination": "/docs/tests/:path*"
+    }
   ],
   "headers": [
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
       ]
     },
     {
       "source": "/manifest.webmanifest",
       "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json" },
-        { "key": "Cache-Control", "value": "public, max-age=3600" }
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
       ]
     },
     {
       "source": "/fonts/:path*",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     },
     {
       "source": "/docs/fonts/:path*",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     },
     {
       "source": "/js/:path*",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
     },
     {
       "source": "/docs/js/:path*",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
     }
   ]
 }
