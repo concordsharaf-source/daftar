@@ -25,6 +25,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE isDeleted = 1 ORDER BY updatedAt DESC")
     fun getDeletedNotes(): Flow<List<Note>>
 
+    @Query("SELECT * FROM notes WHERE isDeleted = 1 ORDER BY updatedAt DESC")
+    suspend fun getDeletedNotesOnce(): List<Note>
+
     @Query("SELECT * FROM notes WHERE isFavorite = 1 AND isDeleted = 0 ORDER BY updatedAt DESC")
     fun getFavoriteNotes(): Flow<List<Note>>
 

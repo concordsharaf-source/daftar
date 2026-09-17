@@ -104,7 +104,10 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenNote: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    appLockManager: AppLockManager
+    appLockManager: AppLockManager,
+    openTrashOnStart: Boolean = false,
+    openBackupOnStart: Boolean = false,
+    onStartActionHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
@@ -126,6 +129,45 @@ fun HomeScreen(
     var showExportSheet by remember { mutableStateOf(false) }
     var emptyTrashConfirm by remember { mutableStateOf(false) }
     var showBackupSheet by remember { mutableStateOf(false) }
+    var pendingBackupFile by remember { mutableStateOf<java.io.File?>(null) }
+    var pendingRestore by remember { mutableStateOf<BackupManager.BackupFile?>(null) }
+
+    // ---------- حفظ النسخة في مجلد يختاره المستخدم ----------
+    val saveBackupPicker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val file = pendingBackupFile
+        pendingBackupFile = null
+        if (uri == null || file == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        file.inputStream().use { input -> input.copyTo(out) }
+                    }
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            Toast.makeText(
+                context,
+                if (ok) "تم حفظ النسخة الاحتياطية" else "تعذر حفظ النسخة",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    // طلبات قادمة من الإعدادات: افتح الورقة المطلوبة فعليًا بدل العودة للرئيسية فقط
+    LaunchedEffect(openTrashOnStart, openBackupOnStart) {
+        if (openTrashOnStart) {
+            showTrashSheet = true
+            onStartActionHandled()
+        } else if (openBackupOnStart) {
+            showExportSheet = true
+            onStartActionHandled()
+        }
+    }
 
     // Thumbnails (first image per note)
     var imageMap by remember { mutableStateOf<Map<Long, String?>>(emptyMap()) }
@@ -166,7 +208,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.size(6.dp))
                 Text(
-                    text = "v2.5",
+                    text = "v2.6",
                     fontFamily = DaftarFonts.Cairo,
                     fontSize = 11.sp,
                     color = colors.primary.copy(alpha = 0.65f),
@@ -493,26 +535,47 @@ fun HomeScreen(
                 )
                 ExportOptionRow(
                     icon = Icons.Default.Backup,
-                    label = "إنشاء نسخة احتياطية",
-                    description = "تصدير كل الملاحظات إلى ملف يمكن استعادته لاحقاً"
+                    label = "حفظ نسخة في مجلد",
+                    description = "اختر مكانًا لحفظ ملف النسخة (ZIP يشمل الصور)"
+                ) {
+                    showExportSheet = false
+                    scope.launch {
+                        try {
+                            val path = BackupManager.createBackup(context, AppContainer.get().notesRepository)
+                            pendingBackupFile = java.io.File(path)
+                            appLockManager.beginExternalFlow()
+                            saveBackupPicker.launch(BackupManager.suggestedFileName())
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "تعذر إنشاء النسخة", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+                ExportOptionRow(
+                    icon = Icons.Default.Share,
+                    label = "مشاركة النسخة",
+                    description = "إرسال ملف النسخة إلى تطبيق آخر (بريد، محادثة، تخزين)"
                 ) {
                     scope.launch {
                         try {
-                            appLockManager.beginExternalFlow()
                             val path = BackupManager.createBackup(context, AppContainer.get().notesRepository)
                             val file = java.io.File(path)
                             val uri = androidx.core.content.FileProvider.getUriForFile(
                                 context, "${context.packageName}.fileprovider", file
                             )
+                            // ZIP فعلي: application/json كان يجعل الملف لا يظهر في منتقي الاستعادة
                             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "application/json"
+                                type = "application/zip"
                                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                putExtra(android.content.Intent.EXTRA_TITLE, file.name)
                                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            context.startActivity(android.content.Intent.createChooser(intent, "حفظ النسخة الاحتياطية"))
+                            appLockManager.beginExternalFlow()
+                            context.startActivity(android.content.Intent.createChooser(intent, "مشاركة النسخة الاحتياطية"))
                         } catch (e: Exception) {
                             withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(context, "تعذر إنشاء النسخة", android.widget.Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "تعذر إنشاء النسخة", Toast.LENGTH_SHORT).show()
                             }
                         }
                         showExportSheet = false
@@ -544,16 +607,8 @@ fun HomeScreen(
                     }
                 } else {
                     showBackupSheet = false
-                    try {
-                        val imported =         BackupManager.importBackup(AppContainer.get().notesRepository, backup)
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "تمت استعادة $imported ملاحظة", Toast.LENGTH_SHORT).show()
-                        }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "فشل الاستعادة: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
+                    // تأكيد قبل الإضافة: الاستعادة تُضيف الملاحظات ولا تستبدل الحالية
+                    pendingRestore = backup
                 }
             }
         }
@@ -571,6 +626,44 @@ fun HomeScreen(
             )
         )
         }
+    }
+
+    // ---------- Restore confirmation (يمنع استيرادًا غير مقصود) ----------
+    pendingRestore?.let { backup ->
+        AlertDialog(
+            onDismissRequest = { pendingRestore = null },
+            title = { Text("استعادة النسخة", fontFamily = DaftarFonts.Cairo) },
+            text = {
+                Text(
+                    text = "سيتم إضافة ${backup.notes.size} ملاحظة من النسخة الاحتياطية " +
+                        "إلى دفترك الحالي (لن تُحذف ملاحظاتك الموجودة). متابعة؟",
+                    fontFamily = DaftarFonts.Cairo
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingRestore = null
+                    scope.launch {
+                        try {
+                            val imported = BackupManager.importBackup(
+                                AppContainer.get().notesRepository,
+                                backup
+                            )
+                            Toast.makeText(context, "تمت استعادة $imported ملاحظة", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "فشل الاستعادة: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) {
+                    Text("استعادة", fontFamily = DaftarFonts.Cairo)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRestore = null }) {
+                    Text("إلغاء", fontFamily = DaftarFonts.Cairo)
+                }
+            }
+        )
     }
 
     // ---------- Delete confirmation ----------

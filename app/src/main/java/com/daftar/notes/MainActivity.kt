@@ -15,6 +15,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +55,8 @@ import kotlinx.coroutines.launch
 private const val ROUTE_HOME = "home"
 private const val ROUTE_EDITOR = "editor/{noteId}"
 private const val ROUTE_SETTINGS = "settings"
+private const val HOME_ACTION_TRASH = "trash"
+private const val HOME_ACTION_BACKUP = "backup"
 
 /**
  * النشاط الرئيسي.
@@ -87,7 +92,11 @@ class MainActivity : FragmentActivity() {
             }
         })
 
-        lifecycleScope.launch { appLockManager.boot() }
+        lifecycleScope.launch {
+            appLockManager.boot()
+            // صيانة خفيفة: حذف مجلدات صور لم تعد تخص أي ملاحظة
+            runCatching { appContainer.notesRepository.cleanupOrphanImages() }
+        }
 
         setContent {
             val darkMode by settingsStore.darkMode.collectAsState(initial = "system")
@@ -137,6 +146,9 @@ private fun DaftarRoot(
     val navController = rememberNavController()
     val repo = appContainer.notesRepository
 
+    // إجراء مطلوب من الإعدادات ليُعرض في الشاشة الرئيسية (سلة المحذوفات/النسخ)
+    var pendingHomeAction by rememberSaveable { mutableStateOf("") }
+
     when {
         // لا نعرض أي محتوى قبل قراءة الإعدادات: يمنع ظهور الملاحظات لحظة
         // ثم تغطيتها بالقفل عند الإقلاع البارد.
@@ -168,7 +180,10 @@ private fun DaftarRoot(
                         viewModel = viewModel { HomeViewModel(repo) },
                         onOpenNote = { noteId -> navController.navigate("editor/$noteId") },
                         onOpenSettings = { navController.navigate(ROUTE_SETTINGS) },
-                        appLockManager = appLockManager
+                        appLockManager = appLockManager,
+                        openTrashOnStart = pendingHomeAction == HOME_ACTION_TRASH,
+                        openBackupOnStart = pendingHomeAction == HOME_ACTION_BACKUP,
+                        onStartActionHandled = { pendingHomeAction = "" }
                     )
                 }
                 composable(ROUTE_EDITOR) { backStackEntry ->

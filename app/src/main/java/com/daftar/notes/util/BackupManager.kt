@@ -46,6 +46,22 @@ object BackupManager {
 
     private val json = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
 
+    /** اسم مقترح لملف النسخة عند الحفظ في مجلد يختاره المستخدم. */
+    fun suggestedFileName(): String {
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm", java.util.Locale.US)
+            .format(java.util.Date())
+        return "daftar_backup_$stamp.daftar.zip"
+    }
+
+    /** يحذف مجلدات الاستعادة المؤقتة المتروكة من محاولات سابقة. */
+    private fun cleanStaleTempDirs(context: Context) {
+        runCatching {
+            context.cacheDir.listFiles()
+                ?.filter { it.isDirectory && it.name.startsWith("backup_restore_") }
+                ?.forEach { it.deleteRecursively() }
+        }
+    }
+
     /**
      * Create a ZIP backup containing all notes and their images.
      * Returns the absolute path of the created archive.
@@ -95,6 +111,7 @@ object BackupManager {
                 BufferedInputStream(input).use { bis ->
                     if (isZip(bis)) {
                         // extract manifest; keep images in cacheDir temporarily
+                        cleanStaleTempDirs(context)
                         val tmpDir = File(context.cacheDir, "backup_restore_${System.currentTimeMillis()}")
                         tmpDir.mkdirs()
                         bis.close()
