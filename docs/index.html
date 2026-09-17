@@ -21,7 +21,7 @@
   <header class="appbar">
     <div class="brand">
       <h1>دفتر</h1>
-      <span class="ver">v2.7</span>
+      <span class="ver">v2.7.1</span>
     </div>
     <div class="actions">
       <button id="btn-search" class="icon-btn" aria-label="بحث" title="بحث">
@@ -184,6 +184,18 @@
       <span class="lbl">استعادة من نسخة<small>ZIP أو JSON — تُضاف ولا تستبدل</small></span>
     </label>
     <input id="file-import" type="file" accept=".zip,.json,application/zip,application/json" hidden />
+
+    <h4 class="sheet-sub">نقل من تطبيقات أخرى</h4>
+    <label class="sheet-row" for="file-keep">
+      <span class="ico">🗒️</span>
+      <span class="lbl">استيراد من Google Keep<small>ملف Takeout.zip (أو ملفات .json المفردة) — يُضاف ولا يستبدل</small></span>
+    </label>
+    <input id="file-keep" type="file" accept=".zip,.json,application/zip,application/json" multiple hidden />
+    <p class="hint">
+      من Keep: الإعدادات ← «تنزيل نسخة احتياطية للبيانات» ← اختر Keep فقط ← صدّر ← اختر ملف ZIP هنا.
+      تُنقل العناوين والنصوص وقوائم المهام والألوان والتثبيت، والمحذوف في Keep يدخل سلة دفتر.
+    </p>
+
     <p class="hint">ملفات النسخ متوافقة في الاتجاهين: نسخة صُنعت على الأندرويد تُستعاد هنا، والعكس.</p>
   </div>
 </div>

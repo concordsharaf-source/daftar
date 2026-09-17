@@ -8,7 +8,7 @@
  *  - الخطوط: تُخزَّن عند أول استخدام (لا نُثقّل التحميل الأول بالخطوط الخمسة).
  */
 
-const VERSION = 'daftar-v2.7.0';
+const VERSION = 'daftar-v2.7.1';
 const CORE_CACHE = `${VERSION}-core`;
 const FONT_CACHE = `${VERSION}-fonts`;
 
@@ -24,6 +24,7 @@ const CORE_ASSETS = [
   './js/crypto.js',
   './js/lock.js',
   './js/pattern.js',
+  './js/keep.js',
   './js/util.js',
   './icons/favicon.svg',
   './icons/icon-192.png',

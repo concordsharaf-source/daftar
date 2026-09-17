@@ -12,6 +12,7 @@ import {
 import { RichEditor } from './editor.js';
 import * as lock from './lock.js';
 import { createPatternPad } from './pattern.js';
+import { importKeep, keepReportText } from './keep.js';
 import {
   buildBackupZip, backupFileName, parseBackupFile, applyImport, stats,
 } from './backup.js';
@@ -56,16 +57,29 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 // ---------------------------------------------------------------- أدوات واجهة
 
+let toastSeq = 0;
+
+/** يعرض رسالة سريعة ويعيد مُعرّفًا يمكن إلغاؤه بـclearToast. */
 function toast(message, ms = 2200) {
   const el = $('#toast');
+  const id = ++toastSeq;
   el.textContent = message;
   el.classList.add('show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.remove('show'), ms);
+  toast._t = setTimeout(() => { if (id === toastSeq) el.classList.remove('show'); }, ms);
+  return id;
+}
+
+/** يُخفي الرسالة إن كانت لا تزال هي المعروضة. */
+function clearToast(id) {
+  if (id && id !== toastSeq) return;
+  toastSeq += 1;
+  clearTimeout(toast._t);
+  $('#toast').classList.remove('show');
 }
 
 /** حوار تأكيد بسيط يعيد Promise<boolean>. */
-function confirmDialog({ title, body, confirmText = 'تأكيد', danger = false }) {
+function confirmDialog({ title, body, confirmText = 'تأكيد', cancelText = 'إلغاء', danger = false }) {
   return new Promise((resolve) => {
     const dlg = $('#dialog-confirm');
     $('#confirm-title').textContent = title;
@@ -73,6 +87,7 @@ function confirmDialog({ title, body, confirmText = 'تأكيد', danger = false
     const ok = $('#confirm-ok');
     const cancel = $('#confirm-cancel');
     ok.textContent = confirmText;
+    cancel.textContent = cancelText;
     ok.classList.toggle('danger', danger);
     dlg.classList.add('open');
 
@@ -331,6 +346,33 @@ async function refreshNotes() {
 
 // ---------------------------------------------------------------- المحرر
 
+/**
+ * يزامن ارتفاع الشريط العلوي مع متغيّر CSS (--appbar-h) حتى تلتصق الأدوات
+ * (شريط التنسيق وشرائح الترتيب) أسفله تمامًا، ولا تختفي تحته عندما يلتفّ
+ * الشريط إلى سطرين على الهواتف.
+ */
+function syncAppbarHeight() {
+  const bars = [$('.appbar'), $('.editor-bar')].filter(Boolean);
+  let height = 0;
+  bars.forEach((bar) => {
+    if (bar.offsetParent === null) return;          // غير ظاهر
+    height = Math.max(height, bar.getBoundingClientRect().height);
+  });
+  if (height > 0) {
+    document.documentElement.style.setProperty('--appbar-h', `${Math.round(height)}px`);
+  }
+}
+
+function watchAppbarHeight() {
+  syncAppbarHeight();
+  const observer = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => syncAppbarHeight())
+    : null;
+  [$('.appbar'), $('.editor-bar')].filter(Boolean).forEach((bar) => observer?.observe(bar));
+  window.addEventListener('resize', syncAppbarHeight);
+  window.addEventListener('orientationchange', syncAppbarHeight);
+}
+
 /** عدّاد الكلمات والأحرف أسفل الملاحظة (بنفس صيغة نسخة أندرويد). */
 function renderCounts({ words, chars }) {
   $('#editor-counts').textContent = `${words} كلمة • ${chars} حرف`;
@@ -358,6 +400,7 @@ async function openEditor(id) {
   $('#screen-editor').hidden = false;
   $('#screen-list').hidden = true;
   document.body.classList.add('editing');
+  syncAppbarHeight();
   history.replaceState({ screen: 'editor', id }, '', `#note-${id}`);
   // لا نُركّز العنوان تلقائيًا: مؤقّت التركيز يخطف الكتابة من المستخدم السريع
   $('#screen-editor').scrollTo?.({ top: 0 });
@@ -398,6 +441,7 @@ async function closeEditor({ skipSave = false } = {}) {
   $('#screen-editor').hidden = true;
   $('#screen-list').hidden = false;
   document.body.classList.remove('editing');
+  syncAppbarHeight();
   history.replaceState({ screen: 'list' }, '', '#list');
   await refreshNotes();
 }
@@ -608,6 +652,67 @@ async function importFile(file) {
   }
 }
 
+/**
+ * استيراد من Google Keep: يعرض ملخّصًا أولًا ثم يستورد.
+ * يدعم ملف Takeout.zip كاملًا أو ملفات .json المفردة (اختيار متعدد).
+ */
+async function importFromKeep(files) {
+  const list = Array.from(files || []);
+  if (!list.length) return;
+  const toastId = toast('جارٍ قراءة ملفات Keep…', 20_000);
+  try {
+    // قراءة أولية للتقرير قبل التعديل على البيانات
+    const { parseKeepFile } = await import('./keep.js');
+    let preview = { notes: 0, pinned: 0, lists: 0, trashed: 0, images: 0, skipped: [] };
+    for (const file of list) {
+      try {
+        const parsed = await parseKeepFile(file);
+        preview.notes += parsed.notes.length;
+        preview.pinned += parsed.notes.filter((n) => n.isPinned).length;
+        preview.lists += parsed.notes.filter((n) => n.__meta?.isList).length;
+        preview.trashed += parsed.notes.filter((n) => n.isDeleted).length;
+        preview.images += parsed.images.length;
+      } catch (e) {
+        preview.skipped.push(`${file.name}: ${e.message}`);
+      }
+    }
+
+    if (!preview.notes) {
+      clearToast(toastId);
+      const why = preview.skipped[0] || 'لم أجد ملاحظات Keep في الملف.';
+      await confirmDialog({
+        title: 'لم أجد ملاحظات Keep',
+        body: why + ' — تأكد أنك اخترت ملف Takeout الذي يحتوي مجلد Keep، أو ملف .json لمعلاحظة واحدة.',
+        confirmText: 'حسنًا',
+        cancelText: 'إغلاق',
+      });
+      return;
+    }
+
+    clearToast(toastId);
+    const ok = await confirmDialog({
+      title: 'استيراد من Google Keep',
+      body: `سيُضاف ${preview.notes} ملاحظة`
+        + (preview.pinned ? ` (منها ${preview.pinned} مثبّتة)` : '')
+        + (preview.lists ? ` و${preview.lists} قائمة مهام` : '')
+        + (preview.images ? ` و${preview.images} صورة` : '')
+        + (preview.trashed ? `، و${preview.trashed} ملاحظة محذوفة في Keep ستُوضع في سلة دفتر` : '')
+        + '. لا شيء من ملاحظاتك الحالية يُحذف أو يُستبدل. متابعة؟',
+      confirmText: 'استيراد',
+    });
+    if (!ok) return;
+
+    toast('جارٍ الاستيراد… احتفظ بالصفحة مفتوحة', 60_000);
+    const report = await importKeep(list);
+    toast(keepReportText(report), 6000);
+    await refreshNotes();
+    closeSheets();
+  } catch (e) {
+    console.error(e);
+    toast('تعذّر الاستيراد: ' + e.message, 4000);
+  }
+}
+
 // ---------------------------------------------------------------- الإعدادات
 
 function renderSettings() {
@@ -762,6 +867,12 @@ function bindEvents() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (file) await importFile(file);
+  });
+
+  $('#file-keep').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length) await importFromKeep(files);
   });
 
   // حجم خط الملاحظة
@@ -1222,6 +1333,7 @@ async function boot() {
 
   bindEvents();
   bindLockControls();
+  watchAppbarHeight();
   renderSortChips();
   registerServiceWorker();
 
