@@ -1439,6 +1439,184 @@ function refreshToolbarState() {
 }
 
 
+// ---------------------------------------------------------------- السحب للتحديث
+
+/**
+ * سحب لأسفل من أعلى الصفحة = تحديث التطبيق (مثل سلوك التطبيقات الأصلية).
+ * لا يعمل إلا في شاشة القائمة (لا داخل المحرر ولا الأوراق) حتى لا يُفقد أي كتابة،
+ * ويكشف أيضًا نسخة جديدة من Service Worker ويشغّلها قبل إعادة التحميل.
+ */
+const PULL = {
+  threshold: 72,     // المسافة اللازمة لإتمام التحديث
+  max: 120,
+  tracking: false,
+  pulling: false,
+  distance: 0,
+  startY: 0,
+  refreshing: false,
+};
+
+function pullAllowed() {
+  if (PULL.refreshing) return false;
+  if (!appStarted) return false;
+  if (!$('#gate').hidden) return false;
+  if (!$('#screen-editor').hidden) return false;      // لا تحديث أثناء الكتابة
+  if ($$('.sheet.open').length) return false;
+  if (state.selecting) return false;
+  if ($('#dialog-confirm').classList.contains('open')) return false;
+  if ($('#dialog-prompt').classList.contains('open')) return false;
+  return (window.scrollY || document.scrollingElement.scrollTop || 0) <= 0;
+}
+
+/** يحدّد موضع المؤشّر أسفل الشريط العلوي وأسفل شرائح الترتيب (بلا تغطية أي عنصر). */
+function pullAnchorTop() {
+  const header = document.querySelector('#screen-list .appbar') || $('.appbar');
+  const sortbar = document.querySelector('#screen-list .sortbar');
+  const bottom = Math.max(
+    header?.getBoundingClientRect().bottom || 60,
+    sortbar?.getBoundingClientRect().bottom || 0,
+  );
+  return Math.round(bottom + 6);
+}
+
+function showPull(distance) {
+  const el = $('#pull');
+  const armed = distance >= PULL.threshold;
+  el.hidden = false;
+  el.style.setProperty('--pull-top', `${pullAnchorTop()}px`);
+  el.classList.add('visible');
+  el.classList.toggle('armed', armed);
+  el.style.transform = `translateY(${Math.round(distance * 0.5)}px)`;
+  $('#pull-text').textContent = armed ? 'أفلت للتحديث' : 'اسحب للتحديث';
+}
+
+function resetPull() {
+  const el = $('#pull');
+  PULL.distance = 0;
+  PULL.pulling = false;
+  el.classList.remove('armed', 'refreshing', 'visible');
+  el.style.transform = '';
+  window.setTimeout(() => { if (!PULL.pulling && !PULL.refreshing) el.hidden = true; }, 220);
+}
+
+/** يتحقق من وجود نسخة جديدة من التطبيق ويحدّث الصفحة. */
+async function refreshApp() {
+  PULL.refreshing = true;
+  const el = $('#pull');
+  el.hidden = false;
+  el.style.setProperty('--pull-top', `${pullAnchorTop()}px`);
+  el.classList.add('refreshing', 'visible');
+  el.classList.remove('armed');
+  el.style.transform = 'translateY(0)';
+  $('#pull-text').textContent = 'جارٍ التحديث…';
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        await reg.update();
+        const fresh = reg.installing || reg.waiting;
+        if (fresh) {
+          // ننتظر انتهاء التثبيت (بحدّ زمني) ثم نشغّل النسخة الجديدة
+          await new Promise((resolve) => {
+            const done = () => resolve();
+            const timer = setTimeout(done, 2500);
+            const check = () => {
+              if (fresh.state === 'installed' || fresh.state === 'activated' || fresh.state === 'redundant') {
+                clearTimeout(timer);
+                resolve();
+              }
+            };
+            fresh.addEventListener('statechange', check);
+            check();
+          });
+          if (fresh.state === 'installed') fresh.postMessage('SKIP_WAITING');
+          await new Promise((r) => setTimeout(r, 350));
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[daftar] تعذّر التحقق من التحديثات', e);
+  }
+
+  // نحفظ أي تعديل معلّق قبل إعادة التحميل (احتياط)
+  try { await state.editor?.save?.({ silent: true }); } catch { /* لا شيء */ }
+  location.reload();
+}
+
+function setupPullToRefresh() {
+  const el = $('#pull');
+
+  window.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    if (!pullAllowed()) return;
+    PULL.tracking = true;
+    PULL.startY = e.touches[0].clientY;
+    PULL.distance = 0;
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!PULL.tracking) return;
+    const dy = e.touches[0].clientY - PULL.startY;
+    if (dy <= 0) {                       // سحب لأعلى: ليس تحديثًا
+      if (PULL.pulling) resetPull();
+      PULL.tracking = false;
+      return;
+    }
+    if ((window.scrollY || document.scrollingElement.scrollTop || 0) > 0) {
+      PULL.tracking = false;
+      resetPull();
+      return;
+    }
+    PULL.pulling = true;
+    PULL.distance = Math.min(PULL.max, dy * 0.55);
+    showPull(PULL.distance);
+    if (e.cancelable) e.preventDefault();   // نمنع سحب المتصفح الأصلي أثناء السحب
+  }, { passive: false });
+
+  const finish = () => {
+    if (!PULL.tracking) return;
+    PULL.tracking = false;
+    if (PULL.pulling && PULL.distance >= PULL.threshold) refreshApp();
+    else resetPull();
+  };
+  window.addEventListener('touchend', finish);
+  window.addEventListener('touchcancel', () => { PULL.tracking = false; resetPull(); });
+
+  // للفأرة على الحاسوب: اسحب من أعلى القائمة بالزر الأيسر
+  let mouseDown = false;
+  window.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !pullAllowed()) return;
+    const target = e.target;
+    if (target.closest('button, input, a, .card-more')) return;
+    mouseDown = true;
+    PULL.tracking = true;
+    PULL.startY = e.clientY;
+    PULL.distance = 0;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!mouseDown || !PULL.tracking) return;
+    const dy = e.clientY - PULL.startY;
+    if (dy <= 0) return;
+    PULL.pulling = true;
+    PULL.distance = Math.min(PULL.max, dy * 0.55);
+    showPull(PULL.distance);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!mouseDown) return;
+    mouseDown = false;
+    finish();
+  });
+
+  // اختصار لوحة المفاتيح: Ctrl/⌘ + R يعمل كالتحديث داخل التطبيق أيضًا
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r' && pullAllowed()) {
+      e.preventDefault();
+      refreshApp();
+    }
+  });
+}
+
 // ---------------------------------------------------------------- بوابة القفل
 
 let gatePad = null;
@@ -1882,6 +2060,7 @@ async function boot() {
   bindEvents();
   bindLockControls();
   watchAppbarHeight();
+  setupPullToRefresh();
   renderSortChips();
   registerServiceWorker();
 
@@ -1902,12 +2081,14 @@ function registerServiceWorker() {
   const start = async () => {
     try {
       const reg = await navigator.serviceWorker.register('sw.js');
+      // نسخة جديدة بالانتظار من زيارة سابقة: شغّلها فورًا
+      if (reg.waiting && navigator.serviceWorker.controller) reg.waiting.postMessage('SKIP_WAITING');
       reg.addEventListener('updatefound', () => {
         const sw = reg.installing;
         if (!sw) return;
         sw.addEventListener('statechange', () => {
           if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-            toast('نسخة جديدة جاهزة — أعد تحميل الصفحة', 4000);
+            toast('نسخة جديدة جاهزة — اسحب لأسفل للتحديث', 4500);
           }
         });
       });

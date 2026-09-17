@@ -422,6 +422,32 @@ button { cursor: pointer; border: none; background: none; }
 .gate .btn.ghost { margin-top: 14px; }
 body.gated .app-bar, body.gated .screen, body.gated .fab { visibility: hidden; }
 
+/* ---------------- السحب للتحديث ---------------- */
+.pull {
+  position: fixed; inset-inline: 0; z-index: 60;
+  top: var(--pull-top, 74px);        /* يبدأ أسفل الشريط العلوي مباشرة */
+  display: flex; justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+.pull.visible { opacity: 1; }
+.pull-inner {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--outline);
+  box-shadow: 0 4px 16px rgba(43, 43, 43, .12);
+  border-radius: 999px; padding: 7px 14px;
+  font-size: 12.5px; color: var(--text-dim);
+}
+.pull-icon svg { width: 18px; height: 18px; fill: var(--primary); display: block; transition: transform .15s ease; }
+.pull.armed .pull-text { color: var(--primary); font-weight: 600; }
+.pull.armed .pull-icon svg { transform: rotate(180deg); }
+.pull.refreshing .pull-text { color: var(--primary); font-weight: 600; }
+.pull.refreshing .pull-icon svg { animation: pull-spin .9s linear infinite; }
+@keyframes pull-spin { to { transform: rotate(360deg); } }
+body.pulling { overscroll-behavior-y: none; }
+
 /* ---------------- التحديد المتعدد ---------------- */
 .card.selected {
   outline: 2.5px solid var(--primary);

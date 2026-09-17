@@ -15,13 +15,22 @@
 <link rel="stylesheet" href="app.css" />
 </head>
 <body>
+<!-- مؤشّر السحب للتحديث (يظهر أعلى الشاشة أثناء السحب لأسفل) -->
+<div id="pull" class="pull" hidden>
+  <div class="pull-inner">
+    <span class="pull-icon" id="pull-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
+    </span>
+    <span class="pull-text" id="pull-text">اسحب للتحديث</span>
+  </div>
+</div>
 
 <!-- ============ شاشة القائمة ============ -->
 <section id="screen-list" class="screen">
   <header class="appbar">
     <div class="brand">
       <h1>دفتر</h1>
-      <span class="ver">v2.9</span>
+      <span class="ver">v2.10</span>
     </div>
     <div class="actions">
       <button id="btn-select" class="icon-btn" aria-label="تحديد ملاحظات" title="تحديد عدة ملاحظات">

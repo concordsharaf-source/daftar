@@ -9,7 +9,8 @@
     "stage2": "node e2e2.mjs",
     "stage3": "node e2e3.mjs",
     "stage4": "node e2e4.mjs",
-    "stage5": "node e2e5.mjs"
+    "stage5": "node e2e5.mjs",
+    "stage6": "node e2e6.mjs"
   },
   "devDependencies": {
     "playwright": "^1.47.0"
