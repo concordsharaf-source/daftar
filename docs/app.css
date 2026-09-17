@@ -420,6 +420,53 @@ button { cursor: pointer; border: none; background: none; }
 .gate .btn.ghost { margin-top: 14px; }
 body.gated .app-bar, body.gated .screen, body.gated .fab { visibility: hidden; }
 
+/* ---------------- التحديد المتعدد ---------------- */
+.card.selected {
+  outline: 2.5px solid var(--primary);
+  background: color-mix(in srgb, var(--primary-soft) 55%, var(--surface));
+}
+.card.selectable {
+  -webkit-user-select: none; user-select: none;
+  padding-inline-start: 42px;   /* مساحة لعلامة التحديد فلا تغطّي العنوان */
+}
+body.selecting #screen-list { padding-bottom: 132px; }   /* لا يحجب شريط العمليات آخر بطاقة */
+.card-check {
+  position: absolute; inset-block-start: 10px; inset-inline-start: 10px;
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 2px solid var(--outline); background: var(--surface);
+  display: grid; place-items: center; font-size: 13px; color: var(--on-primary);
+}
+.card { position: relative; }
+.card.selected .card-check { background: var(--primary); border-color: var(--primary); }
+.card.selected .card-check::after { content: '✓'; font-weight: 700; }
+.card.locked-note .card-title { color: var(--text-dim); }
+
+.select-bar {
+  position: fixed; inset-inline: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  z-index: 45; max-width: 620px; margin: 0 auto;
+  background: var(--surface); border: 1px solid var(--outline);
+  border-radius: 18px; box-shadow: 0 8px 26px rgba(0, 0, 0, .18);
+  padding: 10px 12px 12px;
+}
+.select-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.select-head #select-count { flex: 1; font-size: 13px; color: var(--text-dim); }
+.btn.small { padding: 6px 12px; font-size: 12.5px; }
+.select-actions { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.select-actions::-webkit-scrollbar { display: none; }
+.select-actions button {
+  flex: 0 0 auto; display: grid; place-items: center; gap: 2px;
+  min-width: 68px; padding: 8px 10px; border-radius: 12px;
+  background: var(--surface-2); color: var(--text); font-size: 11.5px;
+}
+.select-actions button .ico { font-size: 17px; line-height: 1; }
+.select-actions button:disabled { opacity: .4; }
+.select-actions button.danger { color: var(--error); }
+body.selecting .fab { display: none; }
+.gate-forgot {
+  display: block; margin: 18px auto 0; font-size: 12.5px;
+  color: var(--text-dim); text-decoration: underline;
+}
+
 /* ---------------- لوحة الباترن ---------------- */
 .pattern-wrap { display: flex; justify-content: center; padding: 8px 0 4px; }
 .pattern-pad {
@@ -523,6 +570,13 @@ body.gated .app-bar, body.gated .screen, body.gated .fab { visibility: hidden; }
 }
 .color-dot:hover { transform: scale(1.06); }
 
+.trash-row.selected {
+  outline: 2.5px solid var(--primary);
+  background: color-mix(in srgb, var(--primary-soft) 55%, var(--surface));
+}
+.trash-row { position: relative; }
+.trash-row .card-check { position: static; margin-inline-end: 8px; }
+body.selecting #trash-list { padding-bottom: 132px; }
 .trash-row {
   display: flex; align-items: center; gap: 8px;
   padding: 11px 12px;

@@ -21,7 +21,7 @@
   <header class="appbar">
     <div class="brand">
       <h1>دفتر</h1>
-      <span class="ver">v2.7.1</span>
+      <span class="ver">v2.8</span>
     </div>
     <div class="actions">
       <button id="btn-search" class="icon-btn" aria-label="بحث" title="بحث">
@@ -76,6 +76,9 @@
       </button>
       <button id="btn-status" class="icon-btn" aria-label="منجزة" title="تحديد كمنجزة">
         <svg viewBox="0 0 24 24"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+      </button>
+      <button id="btn-note-lock" class="icon-btn" aria-label="قفل الملاحظة" title="قفل هذه الملاحظة">
+        <svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5m0 2a3 3 0 0 1 3 3v3H9V6a3 3 0 0 1 3-3m0 11a1.75 1.75 0 0 1 1 3.2V19a1 1 0 0 1-2 0v-1.8A1.75 1.75 0 0 1 12 14"/></svg>
       </button>
       <button id="btn-color" class="icon-btn color-btn" aria-label="لون الملاحظة" title="لون الملاحظة"><span class="dot"></span></button>
       <button id="btn-more" class="icon-btn" aria-label="المزيد" title="المزيد">
@@ -140,8 +143,19 @@
     </button>
 
     <button id="gate-cancel" class="btn ghost" hidden>إلغاء</button>
+    <button id="gate-forgot" class="gate-forgot" hidden>نسيت الباترن/الرمز؟</button>
     <p class="gate-hint" id="gate-hint"></p>
   </div>
+</div>
+
+<!-- ============ شريط العمليات الجماعية ============ -->
+<div id="select-bar" class="select-bar" hidden>
+  <div class="select-head">
+    <span id="select-count">لم تُحدَّد ملاحظات</span>
+    <button id="select-all" class="btn ghost small">تحديد الكل</button>
+    <button id="select-close" class="icon-btn" aria-label="إغلاق التحديد" title="إغلاق">✕</button>
+  </div>
+  <div id="select-actions" class="select-actions"></div>
 </div>
 
 <div class="sheet-backdrop" hidden></div>
@@ -235,7 +249,8 @@
       <div id="lock-relock" class="chips"></div>
     </div>
     <button id="btn-lock-now" class="btn ghost wide" hidden>اقفل الآن</button>
-    <button id="btn-lock-off" class="btn ghost danger wide" hidden>إطفاء القفل وإزالة التشفير</button>
+    <button id="btn-lock-change" class="btn ghost wide" hidden>تغيير الباترن/الرمز</button>
+    <button id="btn-lock-off" class="btn ghost danger wide" hidden>إلغاء القفل وإزالة التشفير</button>
     <p class="hint" id="lock-hint"></p>
 
     <h4 class="sheet-sub">البيانات</h4>

@@ -394,6 +394,27 @@ export async function disableLock() {
   return true;
 }
 
+/**
+ * مسح كل البيانات المحلية (حالة «نسيت الباترن/الرمز»).
+ * لا يفتح المشفَّر ولا يتحايل عليه: يمحو قاعدة البيانات والإعدادات ويبدأ التطبيق نظيفًا.
+ */
+export async function wipeAllData() {
+  clearSessionKey();
+  try { localStorage.removeItem('daftar-settings'); } catch { /* غير متاح */ }
+  try {
+    if (typeof indexedDB !== 'undefined') {
+      await new Promise((resolve) => {
+        const req = indexedDB.deleteDatabase('daftar');
+        req.onsuccess = resolve;
+        req.onerror = resolve;
+        req.onblocked = resolve;
+      });
+    }
+  } catch { /* لا شيء */ }
+  try { sessionStorage.clear(); } catch { /* غير متاح */ }
+  return true;
+}
+
 /** هل تحتاج الجلسة إعادة فتح؟ (يُستخدم عند العودة من الخلفية) */
 export function shouldRelock(backgroundedAt) {
   if (!state.enabled) return false;

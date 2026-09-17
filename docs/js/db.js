@@ -37,6 +37,7 @@ export function newNote(patch = {}) {
     isPinned: false,
     colorLabel: null,
     status: 'draft', // draft | done
+    locked: false,    // قفل على مستوى الملاحظة (يتطلب فتح قفل التطبيق)
     createdAt: now,
     updatedAt: now,
     ...patch,

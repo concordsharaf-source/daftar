@@ -50,6 +50,12 @@ const state = {
   setupPattern: null,
   setupFirst: null,
   setupStage: 0,
+  selection: new Set(),      // مُعرّفات الملاحظات المحدّدة
+  selecting: false,
+  selectContext: 'list',     // list | trash
+  trashNotes: [],            // ملاحظات السلة المعروضة (للتحديد المتعدد)
+  unlockedNotes: new Set(),  // ملاحظات مقفلة فُتحت في هذه الجلسة
+  byTitleCache: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -146,12 +152,28 @@ function openSheet(id) {
   $(id).classList.add('open');
   const backdrop = $('.sheet-backdrop');
   if (backdrop) backdrop.hidden = false;
+  // سجل للرجوع: زر رجوع النظام يغلق الورقة بدل الخروج من التطبيق
+  if (history.state?.sheet !== id) {
+    history.pushState({ sheet: id, screen: $('#screen-editor').hidden ? 'list' : 'editor' }, '', location.href);
+  }
 }
 
-function closeSheets() {
+/** إخفاء الأوراق فقط (بلا أي تعامل مع سجل الرجوع). */
+function hideSheets() {
   $$('.sheet').forEach((s) => s.classList.remove('open'));
   const backdrop = $('.sheet-backdrop');
   if (backdrop) backdrop.hidden = true;
+}
+
+/**
+ * إغلاق الأوراق: يُخفيها، وإن كانت مفتوحة عبر سجل الرجوع يستهلك سجلها.
+ * @param {{fromHistory?: boolean}} opts fromHistory = الإغلاق جاء من زر الرجوع نفسه
+ */
+function closeSheets({ fromHistory = false } = {}) {
+  if (state.selecting && state.selectContext === 'trash') exitSelection({ silent: true });
+  const hadSheet = !!history.state?.sheet;
+  hideSheets();
+  if (hadSheet && !fromHistory) history.back();
 }
 
 function download(blob, filename) {
@@ -189,6 +211,8 @@ function sortedFilteredNotes() {
     const needle = q.toLowerCase();
     const normalized = normalizeArabic(q);
     list = list.filter((n) => {
+      // الملاحظة المقفلة لا يُبحث في عنوانها ولا نصّها قبل فتحها
+      if (n.locked && !state.unlockedNotes.has(n.id)) return false;
       const title = (n.title || '').toLowerCase();
       const body = normalizeArabic(n.title + ' ' + stripForSearch(n.contentHtml));
       return title.includes(needle) || body.includes(normalized);
@@ -220,9 +244,18 @@ function stripForSearch(html) {
 
 function noteCard(note, { pinned = false } = {}) {
   const card = document.createElement('article');
-  card.className = 'card';
+  const selected = state.selection.has(note.id);
+  const hidden = hiddenNoteText(note);
+  card.className = 'card' + (selected ? ' selected' : '') + (state.selecting ? ' selectable' : '')
+    + (note.locked ? ' locked-note' : '');
   card.dataset.id = String(note.id);
   if (note.colorLabel) card.style.setProperty('--label', note.colorLabel);
+
+  if (state.selecting) {
+    const check = document.createElement('span');
+    check.className = 'card-check';
+    card.appendChild(check);
+  }
 
   if (note.colorLabel) {
     const stripe = document.createElement('span');
@@ -232,12 +265,12 @@ function noteCard(note, { pinned = false } = {}) {
 
   const title = document.createElement('h3');
   title.className = 'card-title';
-  title.textContent = note.title?.trim() || 'بدون عنوان';
+  title.textContent = hidden ? hidden.title : (note.title?.trim() || 'بدون عنوان');
   card.appendChild(title);
 
   const body = document.createElement('p');
   body.className = 'card-snippet';
-  body.textContent = snippet(note.contentHtml) || 'لا يوجد نص بعد…';
+  body.textContent = hidden ? hidden.snippet : (snippet(note.contentHtml) || 'لا يوجد نص بعد…');
   card.appendChild(body);
 
   const meta = document.createElement('div');
@@ -246,6 +279,7 @@ function noteCard(note, { pinned = false } = {}) {
   date.textContent = formatRelative(note.updatedAt);
   meta.appendChild(date);
 
+  if (note.locked) meta.insertAdjacentHTML('beforeend', '<span class="chip" title="ملاحظة مقفلة">🔒</span>');
   if (note.status === 'done') meta.insertAdjacentHTML('beforeend', '<span class="chip done">منجزة</span>');
   if (note.isFavorite) meta.insertAdjacentHTML('beforeend', '<span class="chip" title="مفضلة">★</span>');
   if (pinned || note.isPinned) meta.insertAdjacentHTML('beforeend', '<span class="chip" title="مثبّتة">📌</span>');
@@ -261,8 +295,15 @@ function noteCard(note, { pinned = false } = {}) {
   });
   card.appendChild(more);
 
-  const open = () => openEditor(note.id);
-  card.addEventListener('click', open);
+  card.addEventListener('click', (e) => {
+    if (state.selecting) {
+      e.preventDefault();
+      toggleSelection(note.id);
+      return;
+    }
+    openEditor(note.id);
+  });
+  bindSelectionGestures(card, note.id, 'list');
   return card;
 }
 
@@ -341,7 +382,16 @@ function renderSortChips() {
 
 async function refreshNotes() {
   state.notes = await allNotes();
+  pruneSelection();
   renderList();
+  updateSelectBar();
+}
+
+/** يُسقط من التحديد ما لم يبقَ موجودًا (بعد حذف/استعادة). */
+function pruneSelection() {
+  const alive = new Set(state.notes.map((n) => n.id));
+  [...state.selection].forEach((id) => { if (!alive.has(id)) state.selection.delete(id); });
+  if (!state.selection.size && state.selecting) exitSelection({ silent: true });
 }
 
 // ---------------------------------------------------------------- المحرر
@@ -379,15 +429,30 @@ function renderCounts({ words, chars }) {
   $('#editor-counts').title = `${chars} حرف بلا مسافات`;
 }
 
+/** يُظهر/يخفي زر قفل الملاحظة في شريط المحرر. */
+function updateLockChip(note) {
+  const btn = $('#btn-note-lock');
+  if (!btn) return;
+  btn.classList.toggle('active', !!note?.locked);
+  btn.title = note?.locked ? 'الملاحظة مقفلة — اضغط لإلغاء القفل' : 'قفل هذه الملاحظة';
+  btn.setAttribute('aria-label', btn.title);
+}
+
 function setSaveStatus(kind) {
   const el = $('#save-status');
   el.className = 'status-chip ' + kind;
   el.textContent = kind === 'saving' ? 'يُحفظ…' : kind === 'saved' ? 'تم الحفظ ✓' : '';
 }
 
-async function openEditor(id) {
+async function openEditor(id, { fromHistory = false } = {}) {
   const note = await getNote(id);
   if (!note) return;
+
+  // الملاحظة المقفلة تُفتح بعد التحقق فقط
+  if (note.locked && !state.unlockedNotes.has(note.id)) {
+    if (!(await ensureNoteUnlocked(note, { silent: true }))) return;
+  }
+
   state.currentId = id;
 
   $('#note-title').value = note.title || '';
@@ -401,7 +466,13 @@ async function openEditor(id) {
   $('#screen-list').hidden = true;
   document.body.classList.add('editing');
   syncAppbarHeight();
-  history.replaceState({ screen: 'editor', id }, '', `#note-${id}`);
+  // pushState حتى يعمل زر الرجوع (النظام/المتصفح) فيعود للقائمة بدل الخروج من التطبيق
+  if (!fromHistory && history.state?.screen !== 'editor') {
+    history.pushState({ screen: 'editor', id }, '', `#note-${id}`);
+  } else {
+    history.replaceState({ screen: 'editor', id }, '', `#note-${id}`);
+  }
+  updateLockChip(note);
   // لا نُركّز العنوان تلقائيًا: مؤقّت التركيز يخطف الكتابة من المستخدم السريع
   $('#screen-editor').scrollTo?.({ top: 0 });
   window.scrollTo({ top: 0 });
@@ -428,7 +499,42 @@ async function saveCurrentNote() {
   await patchNote(state.currentId, { title: $('#note-title').value || '', contentHtml: state.editor.html });
 }
 
-async function closeEditor({ skipSave = false } = {}) {
+/**
+ * يزامن الواجهة مع حالة السجل بعد أي رجوع (من النظام أو من زر الواجهة).
+ * الدالة «متكرّرة الأثر»: إن كانت الواجهة مطابقة لحالة السجل فلا تفعل شيئًا،
+ * فإغلاق ورقة برمجيًا لا يؤدي إلى إغلاق المحرر بالخطأ.
+ */
+function syncUIWithHistory() {
+  if (!$('#gate').hidden) return;                  // بوابة القفل لها أولوية
+  const target = history.state || { screen: 'list' };
+  const openSheetId = $$('.sheet.open')[0]?.id || null;
+
+  // 1) ورقة مفتوحة والسجل انتقل لمكان آخر ⇒ أُغلقت بالرجوع
+  if (openSheetId && target.sheet !== openSheetId) {
+    closeSheets({ fromHistory: true });
+    return;
+  }
+  // 2) وضع التحديد يُغلق بالرجوع
+  if (state.selecting && !target.sheet) {
+    exitSelection({ silent: true });
+    return;
+  }
+  // 3) الرجوع إلى القائمة بينما نحن في المحرر
+  if (!$('#screen-editor').hidden && target.screen !== 'editor') {
+    closeEditor({ fromHistory: true });
+  }
+}
+
+/** زر الرجوع في الواجهة: يستعمل سجل المتصفح إن وُجد فيعود للقائمة. */
+function requestCloseEditor() {
+  if (document.body.classList.contains('editing') && history.state?.screen === 'editor') {
+    history.back();          // popstate هو من يُنفّذ الإغلاق
+    return;
+  }
+  closeEditor();
+}
+
+async function closeEditor({ skipSave = false, fromHistory = false } = {}) {
   if (!skipSave) await state.editor.save();
   if (state.currentId != null) {
     const note = await getNote(state.currentId);
@@ -437,13 +543,291 @@ async function closeEditor({ skipSave = false } = {}) {
       await deleteNoteForever(note.id);
     }
   }
+  const closedId = state.currentId;
   state.currentId = null;
+  if (closedId != null) state.unlockedNotes.delete(closedId);  // يُطلب الفتح عند كل مرة
   $('#screen-editor').hidden = true;
   $('#screen-list').hidden = false;
   document.body.classList.remove('editing');
   syncAppbarHeight();
-  history.replaceState({ screen: 'list' }, '', '#list');
+  if (!fromHistory && history.state?.screen === 'editor') {
+    history.back();          // نستهلك سجل المحرر فلا يخرج المستخدم من التطبيق لاحقًا
+  }
   await refreshNotes();
+}
+
+// ---------------------------------------------------------------- قفل الملاحظة الواحدة
+
+/** قفل الملاحظة يعتمد على قفل التطبيق لأنه مصدر المفتاح والتحقق. */
+function lockNotesAvailable() {
+  return lock.isEnabled();
+}
+
+/** قفل/فتح ملاحظة واحدة، مع طلب تفعيل قفل التطبيق عند الحاجة. */
+async function toggleNoteLock(note) {
+  if (!lockNotesAvailable()) {
+    const ok = await confirmDialog({
+      title: 'يلزم تفعيل قفل التطبيق أولًا',
+      body: 'قفل الملاحظات يعتمد على باترن/رمز التطبيق. فعّل «قفل التطبيق» من الإعدادات ثم '
+        + 'عُد لقفل أي ملاحظة: يصبح نصّها مشفّرًا، وتُخفى من القائمة حتى تفتحها.',
+      confirmText: 'اذهب للإعدادات',
+      cancelText: 'لاحقًا',
+    });
+    if (ok) await openSettings();
+    return;
+  }
+
+  if (note.locked) {
+    if (!(await ensureNoteUnlocked(note))) return;
+    await patchNote(note.id, { locked: false });
+    state.unlockedNotes.delete(note.id);
+    toast('أُلغي قفل الملاحظة');
+    return;
+  }
+
+  await patchNote(note.id, { locked: true });
+  // تختفي فورًا من القائمة (وإن كانت مفتوحة الآن فسيبقى محتواها معروضًا حتى تخرج منها)
+  state.unlockedNotes.delete(note.id);
+  toast('تم قفل الملاحظة — لن يظهر نصّها في القائمة');
+}
+
+/**
+ * يضمن أن الملاحظة المقفلة مفتوحة الآن (يطلب البوابة إن لزم).
+ * @returns {Promise<boolean>} true عند السماح بالمتابعة
+ */
+async function ensureNoteUnlocked(note, { silent = false } = {}) {
+  if (!note?.locked) return true;
+  if (state.unlockedNotes.has(note.id)) return true;
+  if (!lock.isEnabled()) return true;   // لا قفل تطبيق ⇒ لا وسيلة للتحقق
+  if (!silent) toast('الملاحظة مقفلة — أدخل ما يفتح دفترك');
+  const ok = await showGate({ mode: 'verify', allowCancel: true, reason: 'note' });
+  if (!ok) return false;
+  state.unlockedNotes.add(note.id);
+  return true;
+}
+
+/** نص العرض في القائمة: المقفلة تُخفى تفاصيلها. */
+function hiddenNoteText(note) {
+  if (!note?.locked || state.unlockedNotes.has(note.id)) return null;
+  return { title: 'ملاحظة مقفلة 🔒', snippet: 'اضغط وأدخل الباترن لعرضها' };
+}
+
+// ---------------------------------------------------------------- التحديد المتعدد
+
+const SELECT_ACTIONS = {
+  list: [
+    ['📌', 'تثبيت', () => bulkPatch({ isPinned: true })],
+    ['📌', 'إلغاء التثبيت', () => bulkPatch({ isPinned: false })],
+    ['★', 'مفضلة', () => bulkPatch({ isFavorite: true })],
+    ['☆', 'إزالة المفضلة', () => bulkPatch({ isFavorite: false })],
+    ['✓', 'منجزة', () => bulkPatch({ status: 'done' })],
+    ['🎨', 'لون', () => openColorSheet(null, { bulk: true })],
+    ['🔒', 'قفل', () => bulkSetLock(true)],
+    ['🔓', 'إلغاء القفل', () => bulkSetLock(false)],
+    ['🗑️', 'حذف', () => bulkTrash(), 'danger'],
+  ],
+  trash: [
+    ['↩️', 'استعادة', () => bulkRestore()],
+    ['🔥', 'حذف نهائي', () => bulkDeleteForever(), 'danger'],
+  ],
+};
+
+/** يدخل وضع التحديد، ويمكن أن يبدأ بملاحظة محدّدة. */
+function enterSelection(context = 'list', { preselect = [] } = {}) {
+  state.selecting = true;
+  state.selectContext = context;
+  if (preselect.length) preselect.forEach((id) => state.selection.add(id));
+  document.body.classList.add('selecting');
+  renderList();
+  state.builtSelectContext = null;
+  updateSelectBar();
+}
+
+function exitSelection({ silent = false } = {}) {
+  const wasTrash = state.selectContext === 'trash';
+  state.selecting = false;
+  state.selection.clear();
+  state.selectContext = 'list';
+  document.body.classList.remove('selecting');
+  $('#select-bar').hidden = true;
+  if (state.currentId == null) renderList();
+  if (wasTrash && state.trashNotes.length && $('#sheet-trash').classList.contains('open')) {
+    renderTrashList(state.trashNotes);
+  }
+  if (!silent) toast('أُغلق وضع التحديد');
+}
+
+function selectedIds() {
+  return [...state.selection];
+}
+
+function selectedNotes() {
+  const source = state.selectContext === 'trash' ? state.trashNotes : state.notes;
+  return source.filter((n) => state.selection.has(n.id));
+}
+
+function toggleSelection(id) {
+  if (state.selection.has(id)) state.selection.delete(id);
+  else state.selection.add(id);
+  if (!state.selection.size) { exitSelection({ silent: true }); return; }
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  if (state.selectContext === 'trash') renderTrashList(state.trashNotes);
+  else renderList();
+  updateSelectBar();
+}
+
+/** شريط العمليات السفلي: العدّاد + الأزرار بحسب السياق. */
+function renderSelectionBar(context = state.selectContext) {
+  const host = $('#select-actions');
+  host.innerHTML = '';
+  (SELECT_ACTIONS[context] || []).forEach(([icon, label, action, danger]) => {
+    const b = document.createElement('button');
+    if (danger) b.classList.add('danger');
+    b.innerHTML = `<span class="ico"></span><span></span>`;
+    b.querySelector('.ico').textContent = icon;
+    b.querySelector('span:last-child').textContent = label;
+    b.addEventListener('click', async () => {
+      if (!state.selection.size) { toast('لم تُحدَّد أي ملاحظة'); return; }
+      await action();
+    });
+    host.appendChild(b);
+  });
+}
+
+function updateSelectBar() {
+  const bar = $('#select-bar');
+  bar.hidden = !state.selecting;
+  if (!state.selecting) return;
+  // تُبنى الأزرار بحسب السياق (قائمة/سلة) عند تغيّره فقط
+  if (state.builtSelectContext !== state.selectContext || !$('#select-actions').children.length) {
+    renderSelectionBar(state.selectContext);
+    state.builtSelectContext = state.selectContext;
+  }
+  const n = state.selection.size;
+  $('#select-count').textContent = n
+    ? `تم تحديد ${n} ${n === 1 ? 'ملاحظة' : 'ملاحظات'}`
+    : 'اختر ملاحظة أو أكثر';
+  const all = (state.selectContext === 'trash' ? state.trashNotes : state.notes).length;
+  $('#select-all').textContent = n && n === all ? 'إلغاء التحديد' : 'تحديد الكل';
+}
+
+const BULK_LABEL = {
+  isPinned: { true: 'ثُبّتت', false: 'أُلغي تثبيت' },
+  isFavorite: { true: 'أُضيفت للمفضلة', false: 'أُزيلت من المفضلة' },
+  status: { done: 'حُدّدت كمنجزة' },
+};
+
+async function bulkPatch(patch) {
+  const ids = selectedIds();
+  for (const id of ids) await patchNote(id, { ...patch });
+  const label = BULK_LABEL[Object.keys(patch)[0]]?.[String(Object.values(patch)[0])] || 'تم التحديث';
+  toast(`${label} ${ids.length} ملاحظة`);
+  exitSelection({ silent: true });
+  await refreshNotes();
+}
+
+/** قفل/فتح مجموعة ملاحظات. */
+async function bulkSetLock(locked) {
+  if (locked && !lockNotesAvailable()) {
+    exitSelection({ silent: true });
+    await toggleNoteLock({ id: null, locked: false });   // يعرض شرح التفعيل
+    return;
+  }
+  const notes = selectedNotes();
+  if (!locked) {
+    const lockedOnes = notes.filter((n) => n.locked);
+    for (const note of lockedOnes) {
+      if (!(await ensureNoteUnlocked(note))) return;
+    }
+  }
+  for (const note of notes) {
+    await patchNote(note.id, { locked });
+    state.unlockedNotes.delete(note.id);
+  }
+  toast(locked ? `تم قفل ${notes.length} ملاحظة` : `أُلغي قفل ${notes.length} ملاحظة`);
+  exitSelection({ silent: true });
+  await refreshNotes();
+}
+
+async function bulkTrash() {
+  const ids = selectedIds();
+  const ok = await confirmDialog({
+    title: 'حذف المحدّد',
+    body: `نقل ${ids.length} ملاحظة إلى سلة المحذوفات؟ يمكن استعادتها لاحقًا.`,
+    confirmText: 'حذف',
+    danger: true,
+  });
+  if (!ok) return;
+  for (const id of ids) await patchNote(id, { isDeleted: true });
+  toast(`نُقلت ${ids.length} ملاحظة إلى السلة`);
+  exitSelection({ silent: true });
+  await refreshNotes();
+}
+
+async function bulkRestore() {
+  const ids = selectedIds();
+  for (const id of ids) await patchNote(id, { isDeleted: false });
+  toast(`استُعيدت ${ids.length} ملاحظة`);
+  exitSelection({ silent: true });
+  await refreshNotes();
+  await openTrash();
+}
+
+async function bulkDeleteForever() {
+  const ids = selectedIds();
+  const ok = await confirmDialog({
+    title: 'حذف نهائي',
+    body: `سيُحذف نهائيًا ${ids.length} ملاحظة مع صورها، ولا يمكن التراجع. متابعة؟`,
+    confirmText: 'حذف نهائي',
+    danger: true,
+  });
+  if (!ok) return;
+  for (const id of ids) await deleteNoteForever(id);
+  toast(`حُذفت ${ids.length} ملاحظة نهائيًا`);
+  exitSelection({ silent: true });
+  await refreshNotes();
+  await openTrash();
+}
+
+/** ربط ضغطة مطوّلة (لمسة أو فأرة) بالبطاقة أو صف السلة. */
+function bindSelectionGestures(el, id, context) {
+  let timer = null;
+  let moved = false;
+  const start = (e) => {
+    moved = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (moved) return;
+      if (!state.selecting) enterSelection(context, { preselect: [id] });
+      else toggleSelection(id);
+      navigator.vibrate?.(15);
+    }, 420);
+  };
+  const cancel = () => clearTimeout(timer);
+  el.addEventListener('pointerdown', start);
+  el.addEventListener('pointerup', cancel);
+  el.addEventListener('pointerleave', cancel);
+  el.addEventListener('pointercancel', cancel);
+  el.addEventListener('pointermove', () => { moved = true; cancel(); });
+  el.addEventListener('contextmenu', (e) => {
+    // الضغط المطوّل بالزر الأيمن/اللمس لا يفتح قائمة النظام داخل التطبيق
+    if (state.selecting || context === 'list') e.preventDefault();
+  });
+}
+
+function bindSelectBar() {
+  $('#select-close').addEventListener('click', () => exitSelection());
+  $('#select-all').addEventListener('click', () => {
+    const source = state.selectContext === 'trash' ? state.trashNotes : state.notes;
+    const all = source.map((n) => n.id);
+    if (state.selection.size === all.length) state.selection.clear();
+    else all.forEach((id) => state.selection.add(id));
+    if (!state.selection.size) { exitSelection({ silent: true }); return; }
+    updateSelectionUI();
+  });
 }
 
 // ---------------------------------------------------------------- خيارات الملاحظة
@@ -465,7 +849,14 @@ function openNoteMenu(note) {
       await patchNote(note.id, { status: note.status === 'done' ? 'draft' : 'done' });
       toast('تم التحديث');
     }],
-    ['↗', 'مشاركة', () => shareNote(note)],
+    [note.locked ? '🔓' : '🔒', note.locked ? 'إلغاء قفل الملاحظة' : 'قفل الملاحظة', async () => {
+      await toggleNoteLock(note);
+    }],
+    ['☑', 'تحديد لمزيد من العمليات', () => { enterSelection('list', { preselect: [note.id] }); }],
+    ['↗', 'مشاركة', async () => {
+      if (note.locked && !(await ensureNoteUnlocked(note, { silent: true }))) return;
+      await shareNote(note);
+    }],
     ['🗑️', 'حذف', async () => {
       const ok = await confirmDialog({
         title: 'حذف الملاحظة',
@@ -487,6 +878,10 @@ function openNoteMenu(note) {
     b.querySelector('.ico').textContent = icon;
     b.querySelector('.lbl').textContent = label;
     if (label === 'حذف') b.classList.add('danger');
+    if (label === 'مشاركة' && note.locked) {
+      // المشاركة تتطلب فتحًا: نوضّح ذلك في التلميح
+      b.title = 'الملاحظة مقفلة — سيُطلب فتح القفل أولًا';
+    }
     b.addEventListener('click', async () => {
       closeSheets();
       await action();
@@ -497,19 +892,27 @@ function openNoteMenu(note) {
   openSheet('#sheet-note');
 }
 
-function openColorSheet(note) {
+function openColorSheet(note, { bulk = false } = {}) {
   const host = $('#colors-grid');
   host.innerHTML = '';
+  const targets = bulk ? selectedIds() : [note?.id].filter(Boolean);
+  const title = $('#sheet-colors .sheet-title');
+  if (title) title.textContent = bulk ? `لون ${targets.length} ملاحظة` : 'لون الملاحظة';
+
   COLORS.forEach(([hex, name]) => {
     const b = document.createElement('button');
     b.className = 'color-dot';
     b.style.background = hex;
     b.title = name;
     b.addEventListener('click', async () => {
-      await patchNote(note.id, { colorLabel: hex });
+      for (const id of targets) await patchNote(id, { colorLabel: hex });
       closeSheets();
+      if (bulk) {
+        toast(`تم تلوين ${targets.length} ملاحظة`);
+        exitSelection({ silent: true });
+      }
       await refreshNotes();
-      if (state.currentId === note.id) syncEditorButtons(await getNote(note.id));
+      if (!bulk && state.currentId === note.id) syncEditorButtons(await getNote(note.id));
     });
     host.appendChild(b);
   });
@@ -517,7 +920,7 @@ function openColorSheet(note) {
   clear.className = 'sheet-row danger';
   clear.innerHTML = '<span class="ico">✕</span><span class="lbl">إزالة اللون</span>';
   clear.addEventListener('click', async () => {
-    await patchNote(note.id, { colorLabel: null });
+    for (const id of targets) await patchNote(id, { colorLabel: null });
     closeSheets();
     await refreshNotes();
   });
@@ -544,52 +947,87 @@ async function shareNote(note) {
 // ---------------------------------------------------------------- السلة
 
 async function openTrash() {
+  state.trashNotes = (await allNotes()).filter((n) => n.isDeleted);
+  renderTrashList(state.trashNotes);
+  openSheet('#sheet-trash');
+}
+
+/** يعرض صفوف السلة (ويُستدعى أيضًا عند تحديث التحديد). */
+function renderTrashList(trashed) {
   const host = $('#trash-list');
   host.innerHTML = '';
-  const trashed = (await allNotes()).filter((n) => n.isDeleted);
+  const selecting = state.selecting && state.selectContext === 'trash';
 
   if (!trashed.length) {
     host.innerHTML = '<p class="muted center">السلة فارغة — الملاحظات المحذوفة تظهر هنا.</p>';
-  } else {
-    trashed.forEach((note) => {
-      const row = document.createElement('div');
-      row.className = 'trash-row';
-      const info = document.createElement('div');
-      info.className = 'trash-info';
-      info.innerHTML = `<strong>${escapeHtml(note.title || 'بدون عنوان')}</strong><span>${formatRelative(note.updatedAt)}</span>`;
-      row.appendChild(info);
+    if (selecting) {
+      state.selecting = false;
+      state.selection.clear();
+      state.selectContext = 'list';
+      document.body.classList.remove('selecting');
+      $('#select-bar').hidden = true;
+    }
+    return;
+  }
 
-      const restore = document.createElement('button');
-      restore.className = 'btn ghost';
-      restore.textContent = 'استعادة';
-      restore.addEventListener('click', async () => {
-        await patchNote(note.id, { isDeleted: false });
-        toast('تمت الاستعادة');
-        await refreshNotes();
-        await openTrash();
-      });
-      row.appendChild(restore);
+  trashed.forEach((note) => {
+    const row = document.createElement('div');
+    row.className = 'trash-row' + (state.selection.has(note.id) ? ' selected' : '');
+    if (note.colorLabel) row.style.setProperty('--label', note.colorLabel);
 
-      const kill = document.createElement('button');
-      kill.className = 'btn ghost danger';
-      kill.textContent = 'حذف نهائي';
-      kill.addEventListener('click', async () => {
-        const ok = await confirmDialog({
-          title: 'حذف نهائي',
-          body: 'لا يمكن التراجع عن هذا الإجراء. حذف الملاحظة وصورها؟',
-          confirmText: 'حذف نهائي',
-          danger: true,
-        });
-        if (!ok) return;
-        await deleteNoteForever(note.id);
-        toast('حُذفت نهائيًا');
-        await refreshNotes();
-        await openTrash();
-      });
-      row.appendChild(kill);
-      host.appendChild(row);
+    if (selecting) {
+      const check = document.createElement('span');
+      check.className = 'card-check';
+      row.appendChild(check);
+    }
+
+    const info = document.createElement('div');
+    info.className = 'trash-info';
+    const hidden = hiddenNoteText(note);
+    info.innerHTML = `<strong>${escapeHtml(hidden ? hidden.title : (note.title || 'بدون عنوان'))}</strong>`
+      + `<span>${formatRelative(note.updatedAt)}${note.locked ? ' • 🔒' : ''}</span>`;
+    row.appendChild(info);
+
+    const restore = document.createElement('button');
+    restore.className = 'btn ghost';
+    restore.textContent = 'استعادة';
+    restore.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await patchNote(note.id, { isDeleted: false });
+      toast('تمت الاستعادة');
+      await refreshNotes();
+      await openTrash();
     });
+    row.appendChild(restore);
 
+    const kill = document.createElement('button');
+    kill.className = 'btn ghost danger';
+    kill.textContent = 'حذف نهائي';
+    kill.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ok = await confirmDialog({
+        title: 'حذف نهائي',
+        body: 'لا يمكن التراجع عن هذا الإجراء. حذف الملاحظة وصورها؟',
+        confirmText: 'حذف نهائي',
+        danger: true,
+      });
+      if (!ok) return;
+      await deleteNoteForever(note.id);
+      toast('حُذفت نهائيًا');
+      await refreshNotes();
+      await openTrash();
+    });
+    row.appendChild(kill);
+
+    row.addEventListener('click', () => {
+      if (state.selecting && state.selectContext === 'trash') toggleSelection(note.id);
+      else if (!state.selecting) enterSelection('trash', { preselect: [note.id] });
+    });
+    bindSelectionGestures(row, note.id, 'trash');
+    host.appendChild(row);
+  });
+
+  if (!selecting) {
     const emptyBtn = document.createElement('button');
     emptyBtn.className = 'btn danger wide';
     emptyBtn.textContent = 'إفراغ السلة';
@@ -601,15 +1039,20 @@ async function openTrash() {
         danger: true,
       });
       if (!ok) return;
-      const res = await emptyTrash();
-      toast(`حُذفت ${res.notes} ملاحظة و${res.images} صورة`);
+      await emptyTrash();
+      toast('أُفرغت السلة');
       await refreshNotes();
       await openTrash();
     });
     host.appendChild(emptyBtn);
+
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'تلميح: اضغط مطوّلًا على ملاحظة (أو اضغط عليها) لتحديد عدة ملاحظات واستعادتها أو حذفها معًا.';
+    host.appendChild(hint);
   }
-  openSheet('#sheet-trash');
 }
+
 
 // ---------------------------------------------------------------- النسخ الاحتياطي
 
@@ -775,6 +1218,7 @@ function bindEvents() {
     await openEditor(id);
   });
 
+  bindSelectBar();
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-trash').addEventListener('click', openTrash);
   $('#btn-backup').addEventListener('click', () => openSheet('#sheet-backup'));
@@ -796,7 +1240,7 @@ function bindEvents() {
   }, 120);
   $('#search-input').addEventListener('input', (e) => onQuery(e.target.value));
 
-  $('#btn-back').addEventListener('click', () => closeEditor());
+  $('#btn-back').addEventListener('click', () => requestCloseEditor());
   $('#btn-pin').addEventListener('click', async () => {
     const note = currentEditorNote();
     if (!note) return;
@@ -825,6 +1269,13 @@ function bindEvents() {
   $('#btn-more').addEventListener('click', () => {
     const note = currentEditorNote();
     if (note) openNoteMenu(note);
+  });
+  $('#btn-note-lock').addEventListener('click', async () => {
+    const note = currentEditorNote();
+    if (!note) return;
+    await toggleNoteLock(note);
+    await refreshNotes();
+    updateLockChip(await getNote(note.id));
   });
   $('#btn-undo').addEventListener('click', () => { state.editor.undo(); syncEditorButtons(currentEditorNote() || {}); });
   $('#btn-redo').addEventListener('click', () => { state.editor.redo(); syncEditorButtons(currentEditorNote() || {}); });
@@ -897,9 +1348,15 @@ function bindEvents() {
   // لوحة المفاتيح
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if ($('#dialog-confirm').classList.contains('open')) return;
+      if ($('#dialog-confirm').classList.contains('open') || $('#dialog-prompt').classList.contains('open')) return;
       if ($$('.sheet.open').length) closeSheets();
-      else if (!$('#screen-editor').hidden) closeEditor();
+      else if (state.selecting) exitSelection();
+      else if (!$('#screen-editor').hidden) requestCloseEditor();
+    }
+    // تحديد الكل بالكيبورد داخل وضع التحديد
+    if (state.selecting && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      $('#select-all').click();
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
@@ -907,10 +1364,8 @@ function bindEvents() {
     }
   });
 
-  // العودة من زر المتصفح داخل المحرر
-  window.addEventListener('popstate', () => {
-    if (!$('#screen-editor').hidden) closeEditor();
-  });
+  // زر الرجوع (النظام/المتصفح): يُغلق الورقة، ثم وضع التحديد، ثم المحرر — ولا يخرج من التطبيق
+  window.addEventListener('popstate', syncUIWithHistory);
 
   // العودة للقائمة عند تغيير المظهر من النظام
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyAppearance);
@@ -926,6 +1381,8 @@ function bindEvents() {
       // ارجع للقائمة قبل القفل حتى لا يبقى محتوى الملاحظة معروضًا
       if (!$('#screen-editor').hidden) await closeEditor({ skipSave: true });
       lock.lockNow();
+      state.unlockedNotes.clear();   // الملاحظات المقفلة تُغلق من جديد
+      state.selection.clear();
       appStarted = false;
       $('#notes-list').innerHTML = '';
       showGate({ mode: 'unlock', reason: 'resume' }).then((ok) => { if (ok) enterApp(); });
@@ -967,6 +1424,7 @@ function showGate({ mode = 'unlock', reason = '', allowCancel = false } = {}) {
     : (method === 'biometric' ? 'افتح ببصمة الجهاز' : 'أدخل ما يفتح دفترك');
   $('#gate-error').textContent = '';
   $('#gate-cancel').hidden = !allowCancel;
+  $('#gate-forgot').hidden = mode !== 'unlock';
   $('#gate-bio').hidden = !(method === 'biometric' || lockState.hasBiometric);
 
   // لوحة الباترن
@@ -1025,6 +1483,33 @@ function updateGateHint(busy = false) {
   hint.textContent = state.gateMode === 'verify'
     ? 'مطلوب للتحقق قبل تغيير إعدادات القفل'
     : '';
+}
+
+/**
+ * نسيان الباترن/الرمز: لا يستطيع أحد — ولا نحن — فتح المشفَّر بدونه،
+ * فالخيار الوحيد هو مسح البيانات المحلية والبدء من جديد (بلا أي محاولة خداع).
+ */
+async function forgotSecretFlow() {
+  const ok = await confirmDialog({
+    title: 'نسيت الباترن/الرمز؟',
+    body: 'الملاحظات مشفّرة بمفتاح مشتق منه، ولا نحتفظ بأي نسخة منه — فلا يمكن فتحها أو '
+      + 'استرجاعها بدونه. الخيار المتاح: مسح بيانات «دفتر» على هذا الجهاز والبدء من جديد '
+      + '(استخدم نسخة احتياطية إن كانت لديك). متابعة؟',
+    confirmText: 'مسح البيانات',
+    cancelText: 'إلغاء',
+    danger: true,
+  });
+  if (!ok) return;
+  const typed = await promptDialog({
+    title: 'تأكيد المسح',
+    body: 'اكتب كلمة «مسح» للتأكيد النهائي.',
+    placeholder: 'مسح',
+    confirmText: 'امسح كل شيء',
+    validate: (v) => (v === 'مسح' ? null : 'اكتب كلمة: مسح'),
+  });
+  if (!typed) return;
+  await lock.wipeAllData();
+  location.reload();
 }
 
 function gateSuccess() {
@@ -1122,6 +1607,7 @@ function renderLockUI() {
   });
 
   $('#btn-lock-now').hidden = !s.enabled;
+  $('#btn-lock-change').hidden = !s.enabled || s.method === 'biometric';
   $('#btn-lock-off').hidden = !s.enabled;
 
   const hint = $('#lock-hint');
@@ -1133,13 +1619,13 @@ function renderLockUI() {
       + 'حاجز ضد الفتح العابر فقط دون تشفير. للحماية الكاملة استخدم رمزًا سريًا أو باترن.';
   } else {
     hint.textContent = `احفظ ${lock.methodLabel()} في مكان آمن: لا يمكن استرجاع الملاحظات إن نسيته، `
-      + 'ولن يستطيع أحد (ولا نحن) فتحها بدونه.';
+      + 'ولن يستطيع أحد (ولا نحن) فتحها بدونه. لإلغاء القفل اضغط «إلغاء القفل وإزالة التشفير» بالأسفل.';
   }
 }
 
 /** إعداد الباترن: رسم ثم تأكيد. */
-async function startPatternSetup() {
-  if (lock.isEnabled() && !(await requestUnlockVerification())) return;
+async function startPatternSetup({ skipVerify = false } = {}) {
+  if (!skipVerify && lock.isEnabled() && !(await requestUnlockVerification())) return;
   state.setupStage = 0;
   state.setupFirst = null;
   state.setupPattern = null;
@@ -1183,8 +1669,8 @@ async function startPatternSetup() {
 }
 
 /** إعداد رمز سري (٦ أرقام على الأقل) — أقوى من الباترن. */
-async function startPinSetup() {
-  if (lock.isEnabled() && !(await requestUnlockVerification())) return;
+async function startPinSetup({ skipVerify = false } = {}) {
+  if (!skipVerify && lock.isEnabled() && !(await requestUnlockVerification())) return;
   const pin = await promptDialog({
     title: 'رمز سري جديد',
     body: '٦ أرقام على الأقل. يُشفَّر به نص ملاحظاتك، ولا يمكن استرجاعه إن نسيته.',
@@ -1210,8 +1696,8 @@ async function startPinSetup() {
 }
 
 /** إعداد القفل بالبصمة. */
-async function startBiometricSetup() {
-  if (lock.isEnabled() && !(await requestUnlockVerification())) return;
+async function startBiometricSetup({ skipVerify = false } = {}) {
+  if (!skipVerify && lock.isEnabled() && !(await requestUnlockVerification())) return;
   const available = await lock.checkPlatformAuthenticator();
   if (!available) {
     toast('لا يوجد قارئ بصمة/وجه متاح في هذا المتصفح أو الجهاز', 4000);
@@ -1230,6 +1716,24 @@ async function startBiometricSetup() {
   } else {
     toast('تم تفعيل القفل بالبصمة (حاجز فقط): جهازك لا يدعم استخراج مفتاح تشفير', 5000);
   }
+}
+
+/** تغيير الباترن/الرمز مع إعادة تشفير الملاحظات بالمفتاح الجديد. */
+async function changeLockSecretFlow() {
+  if (!lock.isEnabled()) return;
+  const method = lock.getState().method;
+  if (method === 'biometric') {
+    await confirmDialog({
+      title: 'لا يمكن تغيير البصمة',
+      body: 'لتغيير طريقة الفتح: ألغِ القفل ثم فعّله من جديد بالباترن أو الرمز أو بصمة أخرى.',
+      confirmText: 'حسنًا',
+      cancelText: 'إغلاق',
+    });
+    return;
+  }
+  if (!(await requestUnlockVerification({ strict: true }))) return;
+  if (method === 'pin') await startPinSetup({ skipVerify: true });
+  else await startPatternSetup({ skipVerify: true });
 }
 
 async function disableLockFlow() {
@@ -1277,7 +1781,9 @@ function bindLockControls() {
     closeSheets();
     showGate({ mode: 'unlock', reason: 'manual' }).then(() => enterApp());
   });
+  $('#btn-lock-change').addEventListener('click', changeLockSecretFlow);
   $('#btn-lock-off').addEventListener('click', disableLockFlow);
+  $('#gate-forgot').addEventListener('click', forgotSecretFlow);
   $('#gate-cancel').addEventListener('click', () => {
     const resolve = state.gateResolve;
     state.gateResolve = null;
