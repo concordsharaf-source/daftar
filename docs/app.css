@@ -357,6 +357,19 @@ button { cursor: pointer; border: none; background: none; }
   padding-inline: 4px 2px;
   white-space: nowrap;
 }
+/* محدد حجم الخط الرقمي في شريط الأدوات */
+.tb-select {
+  flex: 0 0 auto;
+  height: 42px;
+  min-width: 62px;
+  border-radius: 12px;
+  border: 1px solid var(--outline);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  padding: 0 6px;
+}
 .toolbar button {
   flex: 0 0 auto;
   min-width: 42px;
@@ -392,7 +405,9 @@ button { cursor: pointer; border: none; background: none; }
   padding: var(--editor-pad-top) 6px 40px;
   font-family: var(--note-font);
   font-size: var(--note-font-size);
-  line-height: var(--line);
+  /* تباعد تلقائي: معامل بلا وحدة فيتمدد كل سطر بحسب أكبر نصٍ فيه —
+     فلا تتداخل الأسطر حتى لو كبّرت جزءًا من النص داخل السطر. */
+  line-height: var(--line-spacing);
   color: var(--text);
   outline: none;
   overflow-wrap: anywhere;

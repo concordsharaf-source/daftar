@@ -198,6 +198,39 @@ export class RichEditor {
     this._scheduleSave();
   }
 
+  /**
+   * حجم خط رقمي (بكسل) كما في برامج التحرير: يطبَّق على التحديد وحده.
+   * يعيد false إن لم يوجد تحديد ليتكفّل المستدعي بضبط حجم الملاحظة كله.
+   *
+   * الطريقة: أمر fontSize بقيمة مؤقتة (7) ثم تحويل وسوم <font size="7">
+   * الناتجة إلى span بنمط font-size صريح بالبكسل المطلوب.
+   */
+  setFontSize(px) {
+    const sel = window.getSelection();
+    const inEditor = sel && sel.rangeCount &&
+      this.contentEl.contains(sel.getRangeAt(0).commonAncestorContainer);
+    if (!inEditor || sel.getRangeAt(0).collapsed) return false;
+
+    this._ensureSelection();
+    this._snapshotNow();
+    try {
+      document.execCommand('styleWithCSS', false, false);
+      document.execCommand('fontSize', false, '7');
+    } finally {
+      document.execCommand('styleWithCSS', false, false);
+    }
+    this.contentEl.querySelectorAll('font[size="7"]').forEach((f) => {
+      const span = document.createElement('span');
+      span.style.fontSize = `${px}px`;
+      while (f.firstChild) span.appendChild(f.firstChild);
+      f.replaceWith(span);
+    });
+    this.contentEl.normalize();
+    this._scheduleSave();
+    this._scheduleCounts();
+    return true;
+  }
+
   /** تلوين النص المحدّد. */
   setTextColor(color) { this.exec('foreColor', color); }
 

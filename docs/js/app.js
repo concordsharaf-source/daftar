@@ -1380,6 +1380,22 @@ function bindEvents() {
     btn.addEventListener('click', () => state.editor.formatBlock(btn.dataset.block));
   });
 
+  // حجم الخط بالأرقام كما في برامج التحرير: على التحديد إن وُجد،
+  // وإلا يضبط حجم الملاحظة كله (ويتزامن التباعد والخلفية تلقائيًا).
+  $('#font-size-select').addEventListener('change', async (e) => {
+    const px = Number(e.target.value);
+    if (!px) return;
+    const applied = state.editor.setFontSize(px);
+    if (!applied) {
+      state.settings.fontSize = px;
+      const slider = $('#set-font-size');
+      if (slider) slider.value = String(Math.min(28, Math.max(14, px)));
+      $('#set-font-size-value').textContent = `${px}px`;
+      applyAppearance();
+      await setSetting('fontSize', px);
+    }
+  });
+
   $$('#toolbar [data-color]').forEach((btn) => {
     btn.addEventListener('click', () => state.editor.setTextColor(btn.dataset.color));
   });

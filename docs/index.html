@@ -30,7 +30,7 @@
   <header class="appbar">
     <div class="brand">
       <h1>دفتر</h1>
-      <span class="ver">v2.10.3</span>
+      <span class="ver">v2.10.4</span>
     </div>
     <div class="actions">
       <button id="btn-select" class="icon-btn" aria-label="تحديد ملاحظات" title="تحديد عدة ملاحظات">
@@ -109,9 +109,22 @@
       <button data-cmd="underline" title="تسطير (Ctrl+U)"><u>ت</u></button>
       <button data-cmd="strikeThrough" title="يتوسطه خط"><s>خ</s></button>
       <span class="sep"></span>
-      <button data-block="h1" title="عنوان رئيسي">H1</button>
-      <button data-block="h2" title="عنوان فرعي">H2</button>
-      <button data-block="p" title="نص عادي">¶</button>
+      <!-- حجم الخط بالأرقام كما في برامج التحرير، يطبَّق على التحديد،
+           وإن لم يوجد تحديد يضبط حجم الملاحظة كله. -->
+      <select id="font-size-select" class="tb-select" title="حجم الخط" aria-label="حجم الخط">
+        <option value="12">12</option>
+        <option value="14">14</option>
+        <option value="16">16</option>
+        <option value="18" selected>18</option>
+        <option value="20">20</option>
+        <option value="22">22</option>
+        <option value="24">24</option>
+        <option value="28">28</option>
+        <option value="32">32</option>
+        <option value="36">36</option>
+        <option value="42">42</option>
+        <option value="48">48</option>
+      </select>
       <button data-block="blockquote" title="اقتباس">❝</button>
       <span class="sep"></span>
       <button data-cmd="insertUnorderedList" title="قائمة نقطية">•</button>
