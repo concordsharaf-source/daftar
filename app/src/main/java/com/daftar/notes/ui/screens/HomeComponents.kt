@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -84,6 +85,7 @@ import com.daftar.notes.data.NoteImage
 import com.daftar.notes.ui.components.NoteCard
 import com.daftar.notes.ui.components.NoteColorPalette
 import com.daftar.notes.ui.theme.DaftarFonts
+import com.daftar.notes.ui.theme.FavoriteRed
 import com.daftar.notes.security.AppLockManager
 import com.daftar.notes.util.BackupManager
 import kotlinx.coroutines.Dispatchers
@@ -229,6 +231,7 @@ internal fun NoteOverflowMenu(
     onPin: () -> Unit,
     onFavorite: () -> Unit,
     isFavorite: Boolean,
+    isPinned: Boolean,
     onColor: () -> Unit,
     onToggleStatus: () -> Unit,
     onDelete: () -> Unit,
@@ -237,15 +240,30 @@ internal fun NoteOverflowMenu(
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        // خيار واحد ديناميكي للتثبيت: يقرأ حالة الملاحظة فيعرض «إلغاء التثبيت»
+        // إن كانت مثبّتة و«تثبيت» إن لم تكن — بدل عرض الخيارين معًا.
         DropdownMenuItem(
-            text = { Text("تثبيت / إلغاء التثبيت", fontFamily = DaftarFonts.Cairo) },
+            text = { Text(if (isPinned) "إلغاء التثبيت" else "تثبيت", fontFamily = DaftarFonts.Cairo) },
             onClick = { onPin(); onDismiss() },
-            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) }
+            leadingIcon = {
+                Icon(
+                    if (isPinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                    contentDescription = null,
+                    tint = if (isPinned) colors.primary else colors.onSurfaceVariant
+                )
+            }
         )
+        // وكذلك المفضلة: خيار واحد يتبدّل نصه وأيقونته بحسب الحالة.
         DropdownMenuItem(
             text = { Text(if (isFavorite) "إزالة من المفضلة" else "إضافة للمفضلة", fontFamily = DaftarFonts.Cairo) },
             onClick = { onFavorite(); onDismiss() },
-            leadingIcon = { Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null) }
+            leadingIcon = {
+                Icon(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = null,
+                    tint = if (isFavorite) FavoriteRed else colors.onSurfaceVariant
+                )
+            }
         )
         DropdownMenuItem(
             text = { Text("تغيير اللون", fontFamily = DaftarFonts.Cairo) },

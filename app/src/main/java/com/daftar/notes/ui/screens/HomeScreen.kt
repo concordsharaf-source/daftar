@@ -349,6 +349,7 @@ fun HomeScreen(
                             onPin = { scope.launch { viewModel.togglePinned(row.note.id, false) } },
                             onFavorite = { scope.launch { viewModel.toggleFavorite(row.note.id, !row.note.isFavorite) } },
                             isFavorite = row.note.isFavorite,
+                            isPinned = row.note.isPinned,
                             onColor = { colorTarget = row.note },
                             onToggleStatus = {
                                 val newStatus = if (row.note.status == "done") "draft" else "done"
@@ -390,6 +391,7 @@ fun HomeScreen(
                         onPin = { scope.launch { viewModel.togglePinned(row.note.id, true) } },
                         onFavorite = { scope.launch { viewModel.toggleFavorite(row.note.id, !row.note.isFavorite) } },
                         isFavorite = row.note.isFavorite,
+                        isPinned = row.note.isPinned,
                         onColor = { colorTarget = row.note },
                         onToggleStatus = {
                             val newStatus = if (row.note.status == "done") "draft" else "done"

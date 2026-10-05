@@ -35,7 +35,9 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.daftar.notes.data.Note
 import com.daftar.notes.data.NoteImage
-import com.daftar.notes.ui.theme.DaftarFonts
+import com.daftar.notes.ui.theme.FavoriteRed
+import com.daftar.notes.ui.theme.LocalNoteFont
+import com.daftar.notes.ui.theme.rememberNoteTitleColor
 import com.daftar.notes.util.TextUtils
 
 /**
@@ -54,6 +56,9 @@ fun NoteCard(
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
+    // خط القائمة الرئيسية = الخط المختار داخل المحرر (لا نثبّت Cairo هنا)
+    val noteFont = LocalNoteFont.current
+    val titleColor = rememberNoteTitleColor()
     val labelColor = note.colorLabel?.let {
         try {
             Color(android.graphics.Color.parseColor(it))
@@ -86,10 +91,10 @@ fun NoteCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = note.title.ifBlank { "بدون عنوان" },
-                    fontFamily = DaftarFonts.Cairo,
+                    fontFamily = noteFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = colors.onSurface,
+                    color = titleColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -100,7 +105,7 @@ fun NoteCard(
                         } else {
                             snippet
                         },
-                        fontFamily = DaftarFonts.Cairo,
+                        fontFamily = noteFont,
                         fontSize = 13.sp,
                         color = colors.onSurfaceVariant,
                         maxLines = 3,
@@ -115,14 +120,14 @@ fun NoteCard(
                 ) {
                     Text(
                         text = TextUtils.formatRelative(note.updatedAt),
-                        fontFamily = DaftarFonts.Cairo,
+                        fontFamily = noteFont,
                         fontSize = 11.sp,
                         color = colors.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                     if (note.status == "draft") {
                         Text(
                             text = "• مسودة",
-                            fontFamily = DaftarFonts.Cairo,
+                            fontFamily = noteFont,
                             fontSize = 11.sp,
                             color = colors.secondary
                         )
@@ -163,7 +168,7 @@ fun NoteCard(
                     Icon(
                         Icons.Default.Favorite,
                         contentDescription = "مفضلة",
-                        tint = Color(0xFFE53935),
+                        tint = FavoriteRed,
                         modifier = Modifier
                             .size(16.dp)
                             .padding(top = if (isPinned) 4.dp else 0.dp)

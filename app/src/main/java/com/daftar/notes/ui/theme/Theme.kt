@@ -1,9 +1,12 @@
 package com.daftar.notes.ui.theme
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -111,3 +114,33 @@ data class AvailableFont(
 
 // Local provider for the currently selected font family
 val LocalNoteFont = staticCompositionLocalOf { DaftarFonts.Cairo }
+
+/** لون المفضلة الموحّد (يُستخدم في البطاقة والقائمة). */
+val FavoriteRed = Color(0xFFE53935)
+
+/**
+ * لون عنوان الملاحظة: بيج دافئ يميّز العنوان عن بقية النص.
+ *
+ * يتكيّف مع الثيم لأن خلفية الثيم الفاتح ورقية (كريمية) أصلًا — البيج الفاتح
+ * فوقها يختفي. لذا في الفاتح نستخدم بيج داكن (بُنّي رملي) يبقى مقروءًا،
+ * وفي الغامق بيج فاتح على السطح الداكن.
+ */
+object NoteTitleColors {
+    /** بيج داكن للثيم الفاتح — تباين ≈ 4.4:1 على سطح #F7F2E6 (كافٍ لنص عريض 16sp). */
+    val BeigeDark = Color(0xFF8C6A45)
+
+    /** بيج فاتح للثيم الغامق — تباين ≈ 12:1 على سطح #1C1C1C. */
+    val BeigeLight = Color(0xFFE8D9B5)
+}
+
+/**
+ * يقرأ لون العنوان المناسب للثيم الحالي.
+ * يكتشف الثيم الغامق من إضاءة لون الخلفية بدل تمرير علم منفصل،
+ * فيبقى صحيحًا مع أي نظام ألوان يُستخدم لاحقًا.
+ */
+@Composable
+fun rememberNoteTitleColor(): Color {
+    val scheme = MaterialTheme.colorScheme
+    return if (scheme.background.luminance() < 0.5f) NoteTitleColors.BeigeLight
+    else NoteTitleColors.BeigeDark
+}
