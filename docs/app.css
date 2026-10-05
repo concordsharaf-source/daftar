@@ -21,9 +21,13 @@
   --font-notoNaskh: 'Noto Naskh Arabic', serif;
   --font-notoSans: 'Noto Sans Arabic', system-ui, sans-serif;
   --note-font-size: 18px;
+  /* معامل تباعد الأسطر (يتحكّم به المستخدم من الإعدادات). */
+  --line-spacing: 1.6;
+  /* ارتفاع السطر وخلفية الورق يُشتقّان من حجم الخط، فيتزامنان معه دائمًا:
+     كبّر الخط فتتباعد الأسطر وتتوسع الأسطر المرسومة بنفس القدر. */
+  --line: calc(var(--note-font-size) * var(--line-spacing));
   --appbar-h: calc(env(safe-area-inset-top, 0px) + 64px);
   --radius: 16px;
-  --line: 28px;
 }
 
 html[data-font='cairo'] { --note-font: var(--font-cairo); }
@@ -384,7 +388,8 @@ button { cursor: pointer; border: none; background: none; }
 .editor.paper {
   flex: 1;
   min-height: 55dvh;
-  padding: 8px 6px 40px;
+  --editor-pad-top: 10px;
+  padding: var(--editor-pad-top) 6px 40px;
   font-family: var(--note-font);
   font-size: var(--note-font-size);
   line-height: var(--line);
@@ -403,6 +408,9 @@ button { cursor: pointer; border: none; background: none; }
     var(--rule) calc(var(--line) - 1px),
     var(--rule) var(--line)
   );
+  /* أزح الخلفية بمقدار الحشو العلوي لتبدأ الأسطر المرسومة مع أول سطر نص،
+     فتبقى محاذية للنص مهما تغيّر حجم الخط أو التباعد. */
+  background-position: 0 var(--editor-pad-top);
   background-position: 0 8px;
 }
 .editor:empty::before {

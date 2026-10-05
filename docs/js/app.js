@@ -36,7 +36,7 @@ const SORTS = [
 
 const state = {
   notes: [],
-  settings: { theme: 'system', fontKey: 'cairo', fontSize: 18, sortMode: 'newest' },
+  settings: { theme: 'system', fontKey: 'cairo', fontSize: 18, lineSpacing: 1.6, sortMode: 'newest' },
   query: '',
   sortMode: 'newest',
   filter: 'all',
@@ -190,12 +190,14 @@ function download(blob, filename) {
 // ---------------------------------------------------------------- الثيم والخط
 
 function applyAppearance() {
-  const { theme, fontKey, fontSize } = state.settings;
+  const { theme, fontKey, fontSize, lineSpacing } = state.settings;
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const dark = theme === 'dark' || (theme === 'system' && prefersDark);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.dataset.font = fontKey || 'cairo';
   document.documentElement.style.setProperty('--note-font-size', `${fontSize || 18}px`);
+  // التباعد يدخل في حساب --line في CSS، فيتزامن ارتفاع السطر وخلفية الورق مع الخط.
+  document.documentElement.style.setProperty('--line-spacing', String(lineSpacing ?? 1.6));
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', dark ? '#121212' : '#0F4C75');
 }
@@ -1221,7 +1223,7 @@ async function importFromKeep(files) {
 // ---------------------------------------------------------------- الإعدادات
 
 function renderSettings() {
-  const { theme, fontKey, fontSize } = state.settings;
+  const { theme, fontKey, fontSize, lineSpacing } = state.settings;
 
   const themeHost = $('#set-theme');
   themeHost.innerHTML = '';
@@ -1256,6 +1258,9 @@ function renderSettings() {
 
   $('#set-font-size').value = String(fontSize || 18);
   $('#set-font-size-value').textContent = `${fontSize || 18}px`;
+  const ls = lineSpacing ?? 1.6;
+  $('#set-line-spacing').value = String(ls);
+  $('#set-line-spacing-value').textContent = `${ls.toFixed(1)}×`;
   $('#set-storage').textContent = storage.persistent ? 'تخزين دائم على هذا الجهاز' : 'تخزين مؤقت (لا يُحفظ بعد الإغلاق)';
   $('#set-storage').classList.toggle('warn', !storage.persistent);
 }
@@ -1408,6 +1413,15 @@ function bindEvents() {
     $('#set-font-size-value').textContent = `${size}px`;
     applyAppearance();
     await setSetting('fontSize', size);
+  }, 120));
+
+  // تباعد الأسطر: يدخل في --line فيتزامن ارتفاع السطر وخلفية الورق مع الخط
+  $('#set-line-spacing').addEventListener('input', debounce(async (e) => {
+    const v = Number(e.target.value);
+    state.settings.lineSpacing = v;
+    $('#set-line-spacing-value').textContent = `${v.toFixed(1)}×`;
+    applyAppearance();
+    await setSetting('lineSpacing', v);
   }, 120));
 
   // التثبيت

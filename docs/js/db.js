@@ -260,6 +260,7 @@ const SETTINGS_DEFAULTS = {
   theme: 'system',           // system | light | dark
   fontKey: 'cairo',          // cairo | amiri | tajawal | notoNaskh | notoSans
   fontSize: 18,
+  lineSpacing: 1.6,          // معامل تباعد الأسطر (1.2 – 2.4)
   sortMode: 'newest',        // newest | oldest | alpha | alphaAr
   lastUnlockTime: 0,
 };
