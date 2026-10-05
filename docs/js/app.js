@@ -633,23 +633,46 @@ function hiddenNoteText(note) {
 
 // ---------------------------------------------------------------- التحديد المتعدد
 
-const SELECT_ACTIONS = {
-  list: [
-    ['📌', 'تثبيت', () => bulkPatch({ isPinned: true })],
-    ['📌', 'إلغاء التثبيت', () => bulkPatch({ isPinned: false })],
-    ['★', 'مفضلة', () => bulkPatch({ isFavorite: true })],
-    ['☆', 'إزالة المفضلة', () => bulkPatch({ isFavorite: false })],
+/**
+ * أزرار شريط العمليات بحسب السياق.
+ *
+ * كانت القائمة تعرض أربعة أزرار منفصلة (تثبيت / إلغاء تثبيت / مفضلة / إزالة
+ * المفضلة). الآن لكلٍّ منهما زر واحد يقرأ حالة الملاحظات المحدَّدة ويعرض
+ * الإجراء المناسب فقط — فينقص العدد من 9 إلى 7.
+ *
+ * القاعدة: إن كانت *كل* المحدَّدة مثبّتة فالزر يلغي التثبيت، وإلا فهو يثبّت.
+ */
+function selectActions(context) {
+  if (context === 'trash') {
+    return [
+      ['↩️', 'استعادة', () => bulkRestore()],
+      ['🔥', 'حذف نهائي', () => bulkDeleteForever(), 'danger'],
+    ];
+  }
+
+  const notes = selectedNotes();
+  const allPinned = notes.length > 0 && notes.every((n) => n.isPinned);
+  const allFavorite = notes.length > 0 && notes.every((n) => n.isFavorite);
+
+  return [
+    [
+      allPinned ? '📍' : '📌',
+      allPinned ? 'إلغاء التثبيت' : 'تثبيت',
+      () => bulkPatch({ isPinned: !allPinned }),
+    ],
+    [
+      allFavorite ? '☆' : '★',
+      // نفس صياغة قائمة الملاحظة المفردة ورسائل التنبيه: «إزالة من المفضلة»
+      allFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة',
+      () => bulkPatch({ isFavorite: !allFavorite }),
+    ],
     ['✓', 'منجزة', () => bulkPatch({ status: 'done' })],
     ['🎨', 'لون', () => openColorSheet(null, { bulk: true })],
     ['🔒', 'قفل', () => bulkSetLock(true)],
     ['🔓', 'إلغاء القفل', () => bulkSetLock(false)],
     ['🗑️', 'حذف', () => bulkTrash(), 'danger'],
-  ],
-  trash: [
-    ['↩️', 'استعادة', () => bulkRestore()],
-    ['🔥', 'حذف نهائي', () => bulkDeleteForever(), 'danger'],
-  ],
-};
+  ];
+}
 
 /** يدخل وضع التحديد، ويمكن أن يبدأ بملاحظة محدّدة. */
 function enterSelection(context = 'list', { preselect = [] } = {}) {
@@ -658,7 +681,6 @@ function enterSelection(context = 'list', { preselect = [] } = {}) {
   if (preselect.length) preselect.forEach((id) => state.selection.add(id));
   document.body.classList.add('selecting');
   renderList();
-  state.builtSelectContext = null;
   updateSelectBar();
 }
 
@@ -702,7 +724,7 @@ function updateSelectionUI() {
 function renderSelectionBar(context = state.selectContext) {
   const host = $('#select-actions');
   host.innerHTML = '';
-  (SELECT_ACTIONS[context] || []).forEach(([icon, label, action, danger]) => {
+  selectActions(context).forEach(([icon, label, action, danger]) => {
     const b = document.createElement('button');
     if (danger) b.classList.add('danger');
     b.innerHTML = `<span class="ico"></span><span></span>`;
@@ -720,11 +742,9 @@ function updateSelectBar() {
   const bar = $('#select-bar');
   bar.hidden = !state.selecting;
   if (!state.selecting) return;
-  // تُبنى الأزرار بحسب السياق (قائمة/سلة) عند تغيّره فقط
-  if (state.builtSelectContext !== state.selectContext || !$('#select-actions').children.length) {
-    renderSelectionBar(state.selectContext);
-    state.builtSelectContext = state.selectContext;
-  }
+  // تُعاد الأزرار في كل تحديث: نصّا «تثبيت» و«المفضلة» يعتمدان على حالة
+  // الملاحظات المحدَّدة، فلا يصحّ الاكتفاء ببنائهما عند تغيّر السياق فقط.
+  renderSelectionBar(state.selectContext);
   const n = state.selection.size;
   $('#select-count').textContent = n
     ? `تم تحديد ${n} ${n === 1 ? 'ملاحظة' : 'ملاحظات'}`
