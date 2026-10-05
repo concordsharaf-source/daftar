@@ -1395,7 +1395,8 @@ function bindEvents() {
   $$('#toolbar .tb-menu button').forEach((b) => b.addEventListener('click', closeTbMenus));
   // الضغط خارج القوائم يغلقها
   document.addEventListener('pointerdown', (e) => {
-    if (!e.target.closest('#toolbar .tb-wrap')) closeTbMenus();
+    const t = e.target;
+    if (!(t instanceof Element) || !t.closest('#toolbar .tb-wrap')) closeTbMenus();
   });
 
   // إبقاء سطر الكتابة/التحديد ظاهرًا فوق الكيبورد بدل أن يُدفن خلفه:
@@ -1412,15 +1413,10 @@ function bindEvents() {
     const rects = r.getClientRects();
     let rect = rects && rects.length ? rects[0] : null;
     if (!rect || (rect.top === 0 && rect.bottom === 0 && rect.left === 0 && rect.right === 0)) {
-      // نطاق مطويّ بلا مستطيلات: نقيس بمؤشر صفرِي العرض مؤقتًا
-      const saved = sel.getRangeAt(0).cloneRange();
-      const m = document.createElement('span');
-      m.textContent = '​';
-      r.insertNode(m);
-      rect = m.getBoundingClientRect();
-      m.remove();
-      sel.removeAllRanges();
-      sel.addRange(saved);
+      // نطاق مطويّ بلا مستطيلات: نقيس مستطيل السطر (عنصر الأب) بلا تعديل DOM
+      const n = r.startContainer;
+      const el = n && (n.nodeType === 1 ? n : n.parentElement);
+      rect = el ? el.getBoundingClientRect() : null;
     }
     return rect;
   };
@@ -1440,12 +1436,19 @@ function bindEvents() {
       let dy = 0;
       if (rect.bottom > bottomLimit) dy = rect.bottom - bottomLimit;
       else if (rect.top < topLimit) dy = rect.top - topLimit;
-      if (Math.abs(dy) > 1) window.scrollBy({ top: dy, behavior: 'smooth' });
+      if (Math.abs(dy) > 1) window.scrollBy({ top: dy }); // فوري: لا تتراكم تمريرات متتالية
     });
   };
+  // أثناء سحب التحديد بالإصبع لا نتدخل إطلاقًا: المتصفح يمرّر ذاتيًا عند
+  // الحواف، وتدخلنا المتكرر كان يراكم التمرير ويقذف الشاشة لأسفل.
+  let selectingByPointer = false;
+  document.addEventListener('pointerdown', () => { selectingByPointer = true; }, { passive: true });
+  ['pointerup', 'pointercancel'].forEach((t) =>
+    document.addEventListener(t, () => { selectingByPointer = false; }, { passive: true }));
   if (window.visualViewport) window.visualViewport.addEventListener('resize', liftCaretAboveKeyboard);
   window.addEventListener('resize', liftCaretAboveKeyboard);
   document.addEventListener('selectionchange', () => {
+    if (selectingByPointer) return;
     if (document.activeElement === $('#editor')) liftCaretAboveKeyboard();
   });
   $('#editor').addEventListener('input', liftCaretAboveKeyboard);
