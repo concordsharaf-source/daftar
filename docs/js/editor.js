@@ -82,12 +82,44 @@ export class RichEditor {
       else if (key === 'y') { event.preventDefault(); this.redo(); }
     };
     this.contentEl.addEventListener('keydown', this.onKeydown);
+
+    // نتتبّع آخر تحديد داخل المحرر لنستعيده إن اختطفه زرٌّ خارجي،
+    // فيبقى التنسيق محصورًا بما حدّده المستخدم فعلًا.
+    this._savedRange = null;
+    this.onSelChange = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const r = sel.getRangeAt(0);
+        if (this.contentEl.contains(r.commonAncestorContainer)) {
+          this._savedRange = r.cloneRange();
+        }
+      }
+    };
+    document.addEventListener('selectionchange', this.onSelChange);
+  }
+
+  /**
+   * يضمن أن التنسيق سيقع على التحديد الحيّ داخل المحرر.
+   * إن كان التحديد ما يزال حيًّا داخل المحرر تركناه كما هو (فيتصرّف الأمر على
+   * المحدَّد فقط)، وإلا استعدنا آخر تحديد محفوظ بعد إعادة التركيز.
+   */
+  _ensureSelection() {
+    const sel = window.getSelection();
+    const alive = sel && sel.rangeCount &&
+      this.contentEl.contains(sel.getRangeAt(0).commonAncestorContainer);
+    if (alive) return;
+    this.contentEl.focus();
+    if (this._savedRange && !this._savedRange.collapsed) {
+      sel.removeAllRanges();
+      sel.addRange(this._savedRange);
+    }
   }
 
   destroy() {
     this.contentEl.removeEventListener('input', this.onInput);
     this.contentEl.removeEventListener('paste', this.onPaste);
     this.contentEl.removeEventListener('keydown', this.onKeydown);
+    document.removeEventListener('selectionchange', this.onSelChange);
     clearTimeout(this.snapshotTimer);
     clearTimeout(this.saveTimer);
     clearTimeout(this.statusTimer);
@@ -149,7 +181,7 @@ export class RichEditor {
   // ------------------------------------------------------------ التنسيق
 
   exec(command, value = null) {
-    this.contentEl.focus();
+    this._ensureSelection();
     this._snapshotNow();
     // مهم للتوافق مع تطبيق أندرويد:
     //  - العريض/المائل/التسطير كوسوم (b/i/u) لأن مُصدِّر PDF في الأندرويد يبحث

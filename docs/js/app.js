@@ -831,7 +831,7 @@ async function bulkDeleteForever() {
  * (لا يُلغى بتحرّك بسيط)، ومع منع قائمة النظام وتحديد النص أثناءه.
  */
 function bindSelectionGestures(el, id, context) {
-  const HOLD_MS = 400;
+  const HOLD_MS = 480;          // أهدأ قليلًا: لا يدخل وضع التحديد بلمسة عابرة
   const MOVE_TOLERANCE = 14;   // بكسل: أي حركة أقل من هذا تُعتبر اهتزاز إصبع
   let timer = null;
   let startX = 0;
@@ -891,6 +891,13 @@ function bindSelectBar() {
 function openNoteMenu(note) {
   const host = $('#menu-note');
   host.innerHTML = '';
+
+  // عنوان يوضّح أن ما يلي قائمة خيارات مستقلة عن بقية الصفحة
+  const head = document.createElement('h3');
+  head.className = 'sheet-title menu-head';
+  head.textContent = note.title ? `خيارات: ${note.title}` : 'خيارات الملاحظة';
+  host.appendChild(head);
+
   const rows = [
     ['📌', note.isPinned ? 'إلغاء التثبيت' : 'تثبيت', async () => {
       await patchNote(note.id, { isPinned: !note.isPinned });
@@ -1340,6 +1347,12 @@ function bindEvents() {
   $('#btn-redo').addEventListener('click', () => { state.editor.redo(); syncEditorButtons(currentEditorNote() || {}); });
 
   // أزرار التنسيق
+  // منع افتراضي عند pointerdown حتى لا يخطف الزر التركيز من المحرر،
+  // فيبقى تحديد النص حيًّا ويقع التنسيق على المحدَّد فقط.
+  $$('#toolbar button').forEach((btn) => {
+    btn.addEventListener('pointerdown', (e) => e.preventDefault());
+  });
+
   $$('#toolbar [data-cmd]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cmd = btn.dataset.cmd;

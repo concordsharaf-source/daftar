@@ -316,17 +316,42 @@ button { cursor: pointer; border: none; background: none; }
 }
 .note-title::placeholder { color: var(--text-dim); opacity: .6; }
 
+/* شريط الأدوات: حاوية عمودية لصفّين، كل صفٍّ قابل للتمرير أفقيًا
+   فلا تلتفّ الأزرار ولا تُقتطع عندما تكون كبيرة. */
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1px;
-  align-items: center;
-  padding: 6px 2px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
   border-block: 1px solid var(--rule);
   position: sticky;
   top: var(--appbar-h);
   background: var(--bg);
   z-index: 15;
+}
+.tb-row {
+  display: flex;
+  flex-wrap: nowrap;              /* لا التفاف: تمرير أفقي بدل التكديس */
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;          /* أخفِ شريط التمرير لجماليّة أنظف */
+  padding: 2px 8px;
+}
+.tb-row::-webkit-scrollbar { display: none; }
+/* صف الألوان مفصول بصريًا عن صف الفقرات */
+.tb-colors {
+  border-top: 1px dashed var(--outline);
+  padding-top: 6px;
+}
+.tb-label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding-inline: 4px 2px;
+  white-space: nowrap;
 }
 .toolbar button {
   flex: 0 0 auto;
@@ -337,6 +362,7 @@ button { cursor: pointer; border: none; background: none; }
   color: var(--text);
   display: grid; place-items: center;
   transition: background .15s ease, transform .1s ease;
+  touch-action: manipulation;
 }
 .toolbar button:active { transform: scale(.93); }
 .toolbar button svg { width: 22px; height: 22px; fill: currentColor; }
@@ -492,17 +518,20 @@ body.selecting #screen-list { padding-bottom: 132px; }   /* لا يحجب شري
   padding: 10px 12px 12px;
 }
 .select-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.select-head #select-count { flex: 1; font-size: 13px; color: var(--text-dim); }
-.select-hint { font-size: 11.5px; color: var(--text-dim); margin: 0 0 8px; }
+.select-head #select-count { flex: 1; font-size: 14px; color: var(--text-dim); }
+.select-hint { font-size: 12px; color: var(--text-dim); margin: 0 0 8px; }
 .btn.small { padding: 6px 12px; font-size: 12.5px; }
-.select-actions { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-.select-actions::-webkit-scrollbar { display: none; }
-.select-actions button {
-  flex: 0 0 auto; display: grid; place-items: center; gap: 2px;
-  min-width: 68px; padding: 8px 10px; border-radius: 12px;
-  background: var(--surface-2); color: var(--text); font-size: 11.5px;
+/* قائمة رأسية مقروءة بدل صفٍّ أفقي بأزرار صغيرة، داخل مستوعب الشريط المميَّز */
+.select-actions {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 46dvh; overflow-y: auto;
 }
-.select-actions button .ico { font-size: 17px; line-height: 1; }
+.select-actions button {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-start;
+  gap: 12px; width: 100%; padding: 12px 14px; border-radius: 12px;
+  background: var(--surface-2); color: var(--text); font-size: 15.5px;
+}
+.select-actions button .ico { font-size: 19px; line-height: 1; }
 .select-actions button:disabled { opacity: .4; }
 .select-actions button.danger { color: var(--error); }
 body.selecting .fab { display: none; }
@@ -595,14 +624,22 @@ body.selecting .card-more { display: none; }   /* في وضع التحديد ل�
 .sheet-row {
   display: flex; align-items: center; gap: 12px;
   width: 100%; text-align: start;
-  padding: 13px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--outline);
   border-radius: 14px;
   background: var(--surface);
-  font-size: 15px;
+  font-size: 16.5px;          /* حجم خط مقبول للقراءة */
 }
 .sheet-row:hover { background: var(--surface-2); }
-.sheet-row .ico { font-size: 18px; }
+.sheet-row .ico { font-size: 20px; }
+/* عنوان قائمة خيارات الملاحظة: يفصلها بصريًا عن بقية الصفحة */
+.menu-head {
+  margin: 2px 2px 6px;
+  font-size: 17px;
+  color: var(--primary);
+  border-bottom: 1px solid var(--outline);
+  padding-bottom: 8px;
+}
 .sheet-row .lbl { display: flex; flex-direction: column; gap: 3px; }
 .sheet-row .lbl small { font-size: 11.5px; color: var(--text-dim); }
 .sheet-row.danger .lbl { color: var(--error); }
