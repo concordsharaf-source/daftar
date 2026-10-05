@@ -391,6 +391,11 @@ button { cursor: pointer; border: none; background: none; }
   color: var(--text);
   outline: none;
   overflow-wrap: anywhere;
+  /* تحديد النص داخل المحرر صريح ومستقر (بعض المتصفحات تمنعه افتراضيًا
+     عن العناصر القابلة للتحرير فتصير التجربة «مجنونة»). */
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
   background-image: repeating-linear-gradient(
     to bottom,
     transparent 0,
@@ -510,13 +515,25 @@ body.selecting #screen-list { padding-bottom: 132px; }   /* لا يحجب شري
 .card-more { z-index: 2; }
 .card.locked-note .card-title { color: var(--text-dim); }
 
+/* تعتيم خفيف أثناء وضع التحديد لا يمنع اللمس: يوضّح أن الوضع فعّال
+   ويهدّئ الخلفية فلا تبدو التجربة «مجنونة». */
+body.selecting::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, .16);
+  z-index: 44;                 /* تحت شريط العمليات (45) وفوق المحتوى */
+  pointer-events: none;
+}
+
 .select-bar {
   position: fixed; inset-inline: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   z-index: 45; max-width: 620px; margin: 0 auto;
   background: var(--surface); border: 1px solid var(--outline);
   border-radius: 18px; box-shadow: 0 8px 26px rgba(0, 0, 0, .18);
   padding: 10px 12px 12px;
+  animation: select-rise .18s ease;   /* دخول هادئ بدل الظهور المفاجئ */
 }
+@keyframes select-rise { from { transform: translateY(14px); opacity: 0; } }
 .select-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .select-head #select-count { flex: 1; font-size: 14px; color: var(--text-dim); }
 .select-hint { font-size: 12px; color: var(--text-dim); margin: 0 0 8px; }

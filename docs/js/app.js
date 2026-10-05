@@ -1347,10 +1347,13 @@ function bindEvents() {
   $('#btn-redo').addEventListener('click', () => { state.editor.redo(); syncEditorButtons(currentEditorNote() || {}); });
 
   // أزرار التنسيق
-  // منع افتراضي عند pointerdown حتى لا يخطف الزر التركيز من المحرر،
-  // فيبقى تحديد النص حيًّا ويقع التنسيق على المحدَّد فقط.
+  // بالفأرة: منع افتراضي عند pointerdown حتى لا يخطف الزر التركيز من المحرر
+  // فيبقى التحديد حيًّا. باللمس: لا نمنع الافتراضي كي يصل حدث click دائمًا،
+  // ويستعيد المحرر آخر تحديد محفوظ فيقع التنسيق على المحدَّد فقط.
   $$('#toolbar button').forEach((btn) => {
-    btn.addEventListener('pointerdown', (e) => e.preventDefault());
+    btn.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') e.preventDefault();
+    });
   });
 
   $$('#toolbar [data-cmd]').forEach((btn) => {
