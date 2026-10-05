@@ -1398,6 +1398,58 @@ function bindEvents() {
     if (!e.target.closest('#toolbar .tb-wrap')) closeTbMenus();
   });
 
+  // إبقاء سطر الكتابة/التحديد ظاهرًا فوق الكيبورد بدل أن يُدفن خلفه:
+  // عند فتح الكيبورد (تقلّص ارتفاع نافذة العرض) أو تحرّك المؤشر أثناء
+  // الكتابة، نمرّر الصفحة حتى يقع السطر النشط بين الشريط والكيبورد.
+  const caretRect = () => {
+    const ed = $('#editor');
+    const sel = getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!ed.contains(range.commonAncestorContainer)) return null;
+    const r = range.cloneRange();
+    r.collapse(false); // نهاية التحديد = موضع استمرار الكتابة
+    const rects = r.getClientRects();
+    let rect = rects && rects.length ? rects[0] : null;
+    if (!rect || (rect.top === 0 && rect.bottom === 0 && rect.left === 0 && rect.right === 0)) {
+      // نطاق مطويّ بلا مستطيلات: نقيس بمؤشر صفرِي العرض مؤقتًا
+      const saved = sel.getRangeAt(0).cloneRange();
+      const m = document.createElement('span');
+      m.textContent = '​';
+      r.insertNode(m);
+      rect = m.getBoundingClientRect();
+      m.remove();
+      sel.removeAllRanges();
+      sel.addRange(saved);
+    }
+    return rect;
+  };
+  let caretRaf = 0;
+  const liftCaretAboveKeyboard = () => {
+    cancelAnimationFrame(caretRaf);
+    caretRaf = requestAnimationFrame(() => {
+      const ed = $('#editor');
+      if (document.activeElement !== ed) return;
+      const vv = window.visualViewport;
+      const visH = vv ? vv.height : window.innerHeight;
+      const rect = caretRect();
+      if (!rect) return;
+      const tb = $('#toolbar');
+      const topLimit = (tb ? tb.getBoundingClientRect().bottom : 0) + 8;
+      const bottomLimit = visH - 14;
+      let dy = 0;
+      if (rect.bottom > bottomLimit) dy = rect.bottom - bottomLimit;
+      else if (rect.top < topLimit) dy = rect.top - topLimit;
+      if (Math.abs(dy) > 1) window.scrollBy({ top: dy, behavior: 'smooth' });
+    });
+  };
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', liftCaretAboveKeyboard);
+  window.addEventListener('resize', liftCaretAboveKeyboard);
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement === $('#editor')) liftCaretAboveKeyboard();
+  });
+  $('#editor').addEventListener('input', liftCaretAboveKeyboard);
+
   // حجم الخط بالأرقام كما في برامج التحرير: على التحديد إن وُجد،
   // وإلا يضبط حجم الملاحظة كله (ويتزامن التباعد والخلفية تلقائيًا).
   $('#font-size-select').addEventListener('change', async (e) => {
