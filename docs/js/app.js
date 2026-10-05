@@ -1380,6 +1380,24 @@ function bindEvents() {
     btn.addEventListener('click', () => state.editor.formatBlock(btn.dataset.block));
   });
 
+  // القائمتان المنسدلتان (تنسيق / ألوان): فتح وإغلاق
+  const closeTbMenus = () => $$('#toolbar .tb-wrap.open').forEach((w) => w.classList.remove('open'));
+  $$('#toolbar .tb-toggle').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wrap = btn.closest('.tb-wrap');
+      const wasOpen = wrap.classList.contains('open');
+      closeTbMenus();
+      if (!wasOpen) wrap.classList.add('open');
+    });
+  });
+  // اختيار عنصر يطبّق التنسيق ويغلق القائمة
+  $$('#toolbar .tb-menu button').forEach((b) => b.addEventListener('click', closeTbMenus));
+  // الضغط خارج القوائم يغلقها
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#toolbar .tb-wrap')) closeTbMenus();
+  });
+
   // حجم الخط بالأرقام كما في برامج التحرير: على التحديد إن وُجد،
   // وإلا يضبط حجم الملاحظة كله (ويتزامن التباعد والخلفية تلقائيًا).
   $('#font-size-select').addEventListener('change', async (e) => {

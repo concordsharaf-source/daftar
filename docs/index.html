@@ -30,7 +30,7 @@
   <header class="appbar">
     <div class="brand">
       <h1>دفتر</h1>
-      <span class="ver">v2.10.4</span>
+      <span class="ver">v2.10.5</span>
     </div>
     <div class="actions">
       <button id="btn-select" class="icon-btn" aria-label="تحديد ملاحظات" title="تحديد عدة ملاحظات">
@@ -102,49 +102,53 @@
   <input id="note-title" class="note-title" placeholder="العنوان" autocomplete="off" />
 
   <div class="toolbar" id="toolbar">
-    <!-- الصف الأول: تنسيق النص والفقرات والقوائم والمحاذاة -->
-    <div class="tb-row" id="toolbar-main">
-      <button data-cmd="bold" title="عريض (Ctrl+B)"><b>ب</b></button>
-      <button data-cmd="italic" title="مائل (Ctrl+I)"><i>م</i></button>
-      <button data-cmd="underline" title="تسطير (Ctrl+U)"><u>ت</u></button>
-      <button data-cmd="strikeThrough" title="يتوسطه خط"><s>خ</s></button>
-      <span class="sep"></span>
-      <!-- حجم الخط بالأرقام كما في برامج التحرير، يطبَّق على التحديد،
-           وإن لم يوجد تحديد يضبط حجم الملاحظة كله. -->
-      <select id="font-size-select" class="tb-select" title="حجم الخط" aria-label="حجم الخط">
-        <option value="12">12</option>
-        <option value="14">14</option>
-        <option value="16">16</option>
-        <option value="18" selected>18</option>
-        <option value="20">20</option>
-        <option value="22">22</option>
-        <option value="24">24</option>
-        <option value="28">28</option>
-        <option value="32">32</option>
-        <option value="36">36</option>
-        <option value="42">42</option>
-        <option value="48">48</option>
-      </select>
-      <button data-block="blockquote" title="اقتباس">❝</button>
-      <span class="sep"></span>
-      <button data-cmd="insertUnorderedList" title="قائمة نقطية">•</button>
-      <button data-cmd="insertOrderedList" title="قائمة مرقّمة">1.</button>
-      <span class="sep"></span>
-      <button data-cmd="justifyRight" title="محاذاة يمين">⇥</button>
-      <button data-cmd="justifyCenter" title="توسيط">⇹</button>
-      <span class="sep"></span>
-      <button data-cmd="removeFormat" class="remove-format" title="إزالة التنسيق">✕</button>
+    <!-- حجم النص بالأرقام كما في برامج التحرير -->
+    <select id="font-size-select" class="tb-select" title="حجم الخط" aria-label="حجم الخط">
+      <option value="12">12</option>
+      <option value="14">14</option>
+      <option value="16">16</option>
+      <option value="18" selected>18</option>
+      <option value="20">20</option>
+      <option value="22">22</option>
+      <option value="24">24</option>
+      <option value="28">28</option>
+      <option value="32">32</option>
+      <option value="36">36</option>
+      <option value="42">42</option>
+      <option value="48">48</option>
+    </select>
+
+    <!-- زر 1: قائمة منسدلة لتنسيق النص -->
+    <div class="tb-wrap">
+      <button id="btn-format" class="tb-toggle" title="تنسيق النص" aria-haspopup="true">
+        <b>ب</b><span class="chev">▾</span>
+      </button>
+      <div class="tb-menu" id="menu-format">
+        <button data-cmd="bold"><span class="ico"><b>ب</b></span>عريض</button>
+        <button data-cmd="italic"><span class="ico"><i>م</i></span>مائل</button>
+        <button data-cmd="underline"><span class="ico"><u>ت</u></span>تسطير</button>
+        <button data-cmd="strikeThrough"><span class="ico"><s>خ</s></span>يتوسطه خط</button>
+        <button data-cmd="insertUnorderedList"><span class="ico">•</span>قائمة نقطية</button>
+        <button data-cmd="insertOrderedList"><span class="ico">1.</span>قائمة مرقّمة</button>
+        <button data-cmd="justifyRight"><span class="ico">⇥</span>محاذاة يمين</button>
+        <button data-cmd="justifyCenter"><span class="ico">⇹</span>توسيط</button>
+        <button data-block="blockquote"><span class="ico">❝</span>اقتباس</button>
+        <button data-cmd="removeFormat" class="remove-format"><span class="ico">✕</span>إزالة التنسيق</button>
+      </div>
     </div>
 
-    <!-- الصف الثاني: الألوان منفصلة تمامًا عن تنسيق الفقرات -->
-    <div class="tb-row tb-colors" id="toolbar-colors">
-      <span class="tb-label">لون النص</span>
-      <button data-color="#B3261E" title="نص أحمر" style="color:#B3261E">أ</button>
-      <button data-color="#0F4C75" title="نص أزرق" style="color:#0F4C75">أ</button>
-      <button data-color="#2E7D32" title="نص أخضر" style="color:#2E7D32">أ</button>
-      <span class="tb-label">تظليل</span>
-      <button data-highlight="#FFF176" title="تظليل أصفر" class="hl" style="--hl:#FFF176"><span>أ</span></button>
-      <button data-highlight="#A5D6A7" title="تظليل أخضر" class="hl" style="--hl:#A5D6A7"><span>أ</span></button>
+    <!-- زر 2: قائمة منسدلة للألوان -->
+    <div class="tb-wrap">
+      <button id="btn-color-menu" class="tb-toggle" title="الألوان" aria-haspopup="true">
+        <span class="dot-ico"></span><span class="chev">▾</span>
+      </button>
+      <div class="tb-menu" id="menu-color">
+        <button data-color="#B3261E"><span class="swatch" style="background:#B3261E"></span>أحمر</button>
+        <button data-color="#0F4C75"><span class="swatch" style="background:#0F4C75"></span>أزرق</button>
+        <button data-color="#2E7D32"><span class="swatch" style="background:#2E7D32"></span>أخضر</button>
+        <button data-highlight="#FFF176"><span class="swatch" style="background:#FFF176"></span>تظليل أصفر</button>
+        <button data-highlight="#A5D6A7"><span class="swatch" style="background:#A5D6A7"></span>تظليل أخضر</button>
+      </div>
     </div>
   </div>
 

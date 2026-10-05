@@ -320,43 +320,40 @@ button { cursor: pointer; border: none; background: none; }
 }
 .note-title::placeholder { color: var(--text-dim); opacity: .6; }
 
-/* شريط الأدوات: حاوية عمودية لصفّين، كل صفٍّ قابل للتمرير أفقيًا
-   فلا تلتفّ الأزرار ولا تُقتطع عندما تكون كبيرة. */
+/* شريط الأدوات: صفّ مضغوط — محدد حجم رقمي + زران يفتح كلٌّ منهما
+   قائمة منسدلة (تنسيق / ألوان) بدل شريط أفقي يشتّت ويحجز مساحة. */
 .toolbar {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
   border-block: 1px solid var(--rule);
   position: sticky;
   top: var(--appbar-h);
   background: var(--bg);
-  z-index: 15;
+  z-index: 25;               /* فوق الورقة لتظهر القوائم المنسدلة */
 }
-.tb-row {
-  display: flex;
-  flex-wrap: nowrap;              /* لا التفاف: تمرير أفقي بدل التكديس */
-  align-items: center;
-  gap: 3px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;          /* أخفِ شريط التمرير لجماليّة أنظف */
-  padding: 2px 8px;
+.tb-wrap { position: relative; }
+.tb-toggle {
+  display: flex; align-items: center; gap: 7px;
+  height: 42px; padding: 0 14px;
+  border: 1px solid var(--outline); border-radius: 12px;
+  background: var(--surface); color: var(--text);
+  font-size: 16px;
 }
-.tb-row::-webkit-scrollbar { display: none; }
-/* صف الألوان مفصول بصريًا عن صف الفقرات */
-.tb-colors {
-  border-top: 1px dashed var(--outline);
-  padding-top: 6px;
+.tb-toggle .chev { font-size: 10px; color: var(--text-dim); }
+.tb-toggle .dot-ico {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: conic-gradient(#B3261E 0 33%, #0F4C75 0 66%, #2E7D32 0);
 }
-.tb-label {
-  flex: 0 0 auto;
-  font-size: 12px;
-  color: var(--text-dim);
-  padding-inline: 4px 2px;
-  white-space: nowrap;
+.tb-menu {
+  position: absolute; top: calc(100% + 6px); inset-inline-start: 0;
+  min-width: 190px; max-height: 320px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--outline); border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .16);
+  padding: 6px; display: none; flex-direction: column; gap: 2px; z-index: 40;
 }
+.tb-wrap.open .tb-menu { display: flex; }
 /* محدد حجم الخط الرقمي في شريط الأدوات */
 .tb-select {
   flex: 0 0 auto;
@@ -370,32 +367,23 @@ button { cursor: pointer; border: none; background: none; }
   font-family: inherit;
   padding: 0 6px;
 }
-.toolbar button {
-  flex: 0 0 auto;
-  min-width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  font-size: 19px;
-  color: var(--text);
-  display: grid; place-items: center;
-  transition: background .15s ease, transform .1s ease;
-  touch-action: manipulation;
+/* عناصر القوائم المنسدلة */
+.tb-menu button {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: start;
+  padding: 10px 12px; border-radius: 10px;
+  font-size: 15px; color: var(--text); background: none;
+  transition: background .15s ease;
 }
-.toolbar button:active { transform: scale(.93); }
-.toolbar button svg { width: 22px; height: 22px; fill: currentColor; }
-.toolbar .remove-format { color: var(--danger, #b3261e); font-size: 21px; }
-.toolbar button:hover { background: var(--surface-2); }
-.toolbar button.active { background: var(--primary-soft); color: var(--primary); }
-.toolbar .sep { width: 1px; height: 26px; background: var(--outline); margin: 0 6px; }
-.toolbar { gap: 3px; padding: 7px 2px; }
-.toolbar .hl span {
-  background: var(--hl);
-  padding: 0 6px;
-  border-radius: 5px;
-  color: #2B2B2B;
-  font-size: 16px;
-  font-weight: 700;
+.tb-menu button:hover { background: var(--surface-2); }
+.tb-menu button:active { transform: scale(.98); }
+.tb-menu button .ico { width: 24px; text-align: center; font-size: 16px; }
+.tb-menu .swatch {
+  width: 18px; height: 18px; border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, .12); flex: 0 0 auto;
 }
+.tb-menu button.remove-format { color: var(--error); }
+.tb-menu button.active { background: var(--primary-soft); color: var(--primary); }
 
 /* أسطر الورق تُزامن ارتفاع السطر تمامًا كما في النسخة الأصلية */
 .editor.paper {
