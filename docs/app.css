@@ -672,6 +672,21 @@ body.selecting .card-more { display: none; }   /* في وضع التحديد ل�
 .sheet-row .lbl small { font-size: 11.5px; color: var(--text-dim); }
 .sheet-row.danger .lbl { color: var(--error); }
 .sheet-row .ico, .sheet-row .lbl { min-width: 0; }
+.sheet-row input[type='checkbox'] {
+  width: 22px; height: 22px; margin-inline-start: auto;
+  accent-color: var(--primary); flex: 0 0 auto;
+}
+/* حقل نصي داخل الأوراق (معرّف عميل OAuth) */
+.text-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: ui-monospace, monospace;
+}
 
 .colors-grid { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 2px 12px; }
 .color-dot {

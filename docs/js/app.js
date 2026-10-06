@@ -16,6 +16,7 @@ import { importKeep, keepReportText } from './keep.js';
 import {
   buildBackupZip, backupFileName, parseBackupFile, applyImport, stats,
 } from './backup.js';
+import * as gdrive from './gdrive.js';
 import {
   normalizeArabic, snippet, formatRelative, formatDateTime, escapeHtml, debounce, sanitizeHtml,
 } from './util.js';
@@ -1134,6 +1135,80 @@ async function exportJson() {
   toast('صُدِّرت الملاحظات كـJSON');
 }
 
+// ---------------------------------------------------------------- مزامنة Drive
+
+function updateGdriveUI() {
+  const on = gdrive.isConnected();
+  $('#gdrive-status').textContent = on
+    ? 'متصل بحسابك في جوجل — نسختك في المجلد المخفي الخاص بالتطبيق.'
+    : 'غير متصل — أدخل معرّف العميل واضغط اتصال.';
+  $('#btn-gdrive-upload').hidden = !on;
+  $('#btn-gdrive-download').hidden = !on;
+  $('#gdrive-auto-row').hidden = !on;
+  const lbl = $('#btn-gdrive-connect .lbl');
+  lbl.firstChild.textContent = on ? 'قطع الاتصال بجوجل' : 'الاتصال بحساب جوجل';
+}
+
+async function gdriveConnectToggle() {
+  try {
+    if (gdrive.isConnected()) {
+      gdrive.disconnect();
+      updateGdriveUI();
+      toast('قُطع الاتصال بجوجل');
+      return;
+    }
+    gdrive.setClientId($('#gdrive-client-id').value);
+    await setSetting('gdriveClientId', $('#gdrive-client-id').value.trim());
+    toast('تُفتح نافذة جوجل…', 5000);
+    await gdrive.connect();
+    updateGdriveUI();
+    toast('تم الاتصال بجوجل');
+  } catch (e) {
+    console.warn('[gdrive]', e);
+    toast(e.message || 'تعذّر الاتصال بجوجل', 3500);
+  }
+}
+
+async function gdriveUpload(manual = true) {
+  try {
+    const blob = await buildBackupZip();
+    await gdrive.uploadBackup(blob);
+    if (manual) toast('رُفعت النسخة إلى درايف');
+  } catch (e) {
+    console.warn('[gdrive]', e);
+    toast(manual ? `تعذّر الرفع: ${e.message}` : 'تعذّر الرفع التلقائي إلى درايف', 3500);
+  }
+}
+
+async function gdriveDownload() {
+  try {
+    toast('يُنزَّل من درايف…', 5000);
+    const blob = await gdrive.downloadBackup();
+    if (!blob) { toast('لا نسخة على درايف بعد — ارفع أولًا'); return; }
+    const parsed = await parseBackupFile(blob);
+    if (!parsed.notes.length) { toast('النسخة على درايف فارغة'); return; }
+    const ok = await confirmDialog({
+      title: 'استعادة من درايف',
+      body: `سيُضاف ${parsed.notes.length} ملاحظة` +
+        (parsed.images.length ? ` و${parsed.images.length} صورة` : '') +
+        ' إلى دفترك الحالي (لن تُحذف ملاحظاتك). متابعة؟',
+      confirmText: 'استعادة',
+    });
+    if (!ok) return;
+    const res = await applyImport(parsed);
+    toast(`تمت استعادة ${res.notes} ملاحظة${res.images ? ` و${res.images} صورة` : ''}`);
+    await refreshNotes();
+  } catch (e) {
+    console.warn('[gdrive]', e);
+    toast(`تعذّر التنزيل: ${e.message}`, 3500);
+  }
+}
+
+/** رفع تلقائي مؤجّل بعد الحفظ (إن فُعّل وكان الاتصال قائمًا). */
+const scheduleGdriveUpload = debounce(() => {
+  if (state.settings.gdriveAuto && gdrive.isConnected()) gdriveUpload(false);
+}, 5000);
+
 async function importFile(file) {
   try {
     const parsed = await parseBackupFile(file);
@@ -1488,6 +1563,24 @@ function bindEvents() {
     e.target.value = '';
     if (file) await importFile(file);
   });
+
+  // مزامنة Google Drive
+  $('#gdrive-client-id').value = state.settings.gdriveClientId || '';
+  gdrive.setClientId(state.settings.gdriveClientId || '');
+  $('#gdrive-auto').checked = !!state.settings.gdriveAuto;
+  $('#gdrive-client-id').addEventListener('change', async (e) => {
+    gdrive.setClientId(e.target.value);
+    await setSetting('gdriveClientId', e.target.value.trim());
+  });
+  $('#btn-gdrive-connect').addEventListener('click', gdriveConnectToggle);
+  $('#btn-gdrive-upload').addEventListener('click', () => gdriveUpload(true));
+  $('#btn-gdrive-download').addEventListener('click', gdriveDownload);
+  $('#gdrive-auto').addEventListener('change', async (e) => {
+    state.settings.gdriveAuto = e.target.checked;
+    await setSetting('gdriveAuto', e.target.checked);
+    if (e.target.checked && gdrive.isConnected()) gdriveUpload(false);
+  });
+  updateGdriveUI();
 
   $('#file-keep').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files || []);
@@ -2192,6 +2285,7 @@ async function boot() {
     onSave: async ({ title, html }) => {
       if (state.currentId == null) return;
       await patchNote(state.currentId, { title, contentHtml: html });
+      scheduleGdriveUpload();
     },
   });
 

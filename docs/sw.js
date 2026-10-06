@@ -8,7 +8,7 @@
  *  - الخطوط: تُخزَّن عند أول استخدام (لا نُثقّل التحميل الأول بالخطوط الخمسة).
  */
 
-const VERSION = 'daftar-v2.10.7';
+const VERSION = 'daftar-v2.10.8';
 const CORE_CACHE = `${VERSION}-core`;
 const FONT_CACHE = `${VERSION}-fonts`;
 
