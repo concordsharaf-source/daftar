@@ -8,6 +8,7 @@
 import {
   init, storage, allNotes, getNote, saveNote, patchNote, deleteNoteForever, emptyTrash,
   getSettings, setSetting, importNotes,
+  takeLocalSnapshot, listLocalSnapshots, restoreLocalSnapshot,
 } from './db.js';
 import { RichEditor } from './editor.js';
 import * as lock from './lock.js';
@@ -1209,6 +1210,60 @@ const scheduleGdriveUpload = debounce(() => {
   if (state.settings.gdriveAuto && gdrive.isConnected()) gdriveUpload(false);
 }, 5000);
 
+// ---------------------------------------------------------------- لقطات محلية يومية
+
+async function renderSnapshots() {
+  const list = await listLocalSnapshots();
+  const host = $('#snap-list');
+  host.textContent = '';
+  for (const s of list) {
+    const b = document.createElement('button');
+    b.className = 'sheet-row';
+    b.dataset.snap = s.id;
+    b.innerHTML = `<span class="ico">🗓️</span><span class="lbl">${formatDateTime(s.takenAt)}<small>${s.notesCount} ملاحظة — اضغط للاستعادة</small></span>`;
+    host.appendChild(b);
+  }
+}
+
+async function snapshotNow() {
+  try {
+    await takeLocalSnapshot();
+    state.settings.lastSnapshotAt = Date.now();
+    await setSetting('lastSnapshotAt', state.settings.lastSnapshotAt);
+    await renderSnapshots();
+    toast('حُفظت لقطة محلية');
+  } catch (e) {
+    console.warn('[snapshots]', e);
+    toast('تعذّر حفظ اللقطة', 3000);
+  }
+}
+
+async function restoreSnapshot(id) {
+  const ok = await confirmDialog({
+    title: 'استعادة لقطة',
+    body: 'ستُضاف ملاحظات تلك اللقطة إلى دفترك الحالي (لن يُحذف شيء). متابعة؟',
+    confirmText: 'استعادة',
+  });
+  if (!ok) return;
+  const n = await restoreLocalSnapshot(id);
+  toast(`استُعيدت ${n} ملاحظة`);
+  await refreshNotes();
+}
+
+/** حفظ يومي: لقطة كل 24 ساعة مع تدوير يستبدل الأقدم (تبقى آخر 7). */
+async function dailyHousekeeping() {
+  const now = Date.now();
+  if ((state.settings.lastSnapshotAt || 0) + 24 * 3600 * 1000 <= now) {
+    try {
+      await takeLocalSnapshot(now);
+      state.settings.lastSnapshotAt = now;
+      await setSetting('lastSnapshotAt', now);
+    } catch (e) {
+      console.warn('[snapshots]', e);
+    }
+  }
+}
+
 async function importFile(file) {
   try {
     const parsed = await parseBackupFile(file);
@@ -1367,7 +1422,7 @@ function bindEvents() {
   });
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-trash').addEventListener('click', openTrash);
-  $('#btn-backup').addEventListener('click', () => openSheet('#sheet-backup'));
+  $('#btn-backup').addEventListener('click', () => { openSheet('#sheet-backup'); renderSnapshots(); });
 
   $('#btn-search').addEventListener('click', () => {
     const bar = $('#searchbar');
@@ -1581,6 +1636,14 @@ function bindEvents() {
     if (e.target.checked && gdrive.isConnected()) gdriveUpload(false);
   });
   updateGdriveUI();
+
+  // اللقطات المحلية اليومية
+  $('#btn-snap-now').addEventListener('click', snapshotNow);
+  $('#snap-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-snap]');
+    if (b) restoreSnapshot(Number(b.dataset.snap));
+  });
+  renderSnapshots();
 
   $('#file-keep').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files || []);
@@ -2257,6 +2320,7 @@ async function enterApp() {
   if (appStarted) return;
   appStarted = true;
   await refreshNotes();
+  dailyHousekeeping();
   // فتح ملاحظة مباشرة عبر الرابط (#note-3) — بعد الفتح فقط
   const match = location.hash.match(/^#note-(\d+)$/);
   if (match) {
@@ -2291,6 +2355,10 @@ async function boot() {
 
   bindEvents();
   bindLockControls();
+  // خطّاف اختبارات: يتيح للتحقق الآلي أخذ لقطات بتواريخ مخصصة
+  if (location.hash.includes('debug')) {
+    window.__daftar = { takeLocalSnapshot, listLocalSnapshots };
+  }
   watchAppbarHeight();
   setupPullToRefresh();
   renderSortChips();

@@ -14,10 +14,11 @@ import {
 } from './crypto.js';
 
 const DB_NAME = 'daftar';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const NOTES = 'notes';
 const IMAGES = 'images';
 const SETTINGS = 'settings';
+const SNAPS = 'snapshots';
 
 export const storage = { persistent: false, mode: 'memory' };
 
@@ -66,6 +67,10 @@ function openIDB() {
       if (!db.objectStoreNames.contains(SETTINGS)) {
         db.createObjectStore(SETTINGS, { keyPath: 'key' });
       }
+      if (!db.objectStoreNames.contains(SNAPS)) {
+        const snaps = db.createObjectStore(SNAPS, { keyPath: 'id', autoIncrement: true });
+        snaps.createIndex('takenAt', 'takenAt');
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error || new Error('idb open failed'));
@@ -98,7 +103,7 @@ function reqDone(request) {
 
 // ---------------------------------------------------------------- memory fallback
 
-const mem = { notes: [], images: [], settings: new Map(), nextNoteId: 1, nextImageId: 1 };
+const mem = { notes: [], images: [], settings: new Map(), snaps: [], nextNoteId: 1, nextImageId: 1, nextSnapId: 1 };
 
 // ---------------------------------------------------------------- API
 
@@ -348,4 +353,56 @@ export async function importNotes(notes) {
 /** للحذف النهائي: جمع كل ما سيُحذف (لملفات الصور على القرص عند التصدير). */
 export async function deletedNotes() {
   return (await allNotes()).filter((n) => n.isDeleted);
+}
+
+// ---------------------------------------------------------------- نسخ محلية يومية
+
+/**
+ * لقطة محلية تلقائية (نصوص الملاحظات بلا صور — خفيفة): تُؤخذ يوميًا ويُدار
+ * تدويرها بحيث تُستبدل الأقدم ويُبقى على آخر `keep` لقطات فقط.
+ */
+export async function takeLocalSnapshot(takenAt = Date.now(), keep = 7) {
+  const payload = await exportPayload();
+  const rec = { takenAt, notesCount: payload.notes.length, payload };
+  let id;
+  if (storage.mode === 'indexeddb') {
+    id = await tx(SNAPS, 'readwrite', (s) => reqDone(s.add(rec)));
+  } else {
+    rec.id = mem.nextSnapId++;
+    mem.snaps.push(rec);
+    id = rec.id;
+  }
+  await pruneLocalSnapshots(keep);
+  return id;
+}
+
+/** اللقطات الأحدث أولًا. */
+export async function listLocalSnapshots() {
+  const list = storage.mode === 'indexeddb'
+    ? (await tx(SNAPS, 'readonly', (s) => reqDone(s.getAll()))) || []
+    : [...mem.snaps];
+  return list.sort((a, b) => b.takenAt - a.takenAt);
+}
+
+/** يحذف الأقدم ليبقى `keep` لقطات — الاستبدال الدوري المستمر. */
+export async function pruneLocalSnapshots(keep = 7) {
+  const list = await listLocalSnapshots();
+  const stale = list.slice(keep);
+  if (!stale.length) return 0;
+  if (storage.mode === 'indexeddb') {
+    await tx(SNAPS, 'readwrite', (s) => { stale.forEach((r) => s.delete(r.id)); });
+  } else {
+    const ids = new Set(stale.map((r) => r.id));
+    mem.snaps = mem.snaps.filter((r) => !ids.has(r.id));
+  }
+  return stale.length;
+}
+
+/** يستعيد لقطة: تُضاف ملاحظاتها ولا تستبدل الحالي (كبقية الاستيرادات). */
+export async function restoreLocalSnapshot(id) {
+  const rec = storage.mode === 'indexeddb'
+    ? (await tx(SNAPS, 'readonly', (s) => reqDone(s.get(Number(id))))) || null
+    : mem.snaps.find((r) => r.id === Number(id)) || null;
+  if (!rec) return 0;
+  return importNotes(rec.payload.notes);
 }

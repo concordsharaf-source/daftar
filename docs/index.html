@@ -30,7 +30,7 @@
   <header class="appbar">
     <div class="brand">
       <h1>دفتر</h1>
-      <span class="ver">v2.10.8</span>
+      <span class="ver">v2.10.9</span>
     </div>
     <div class="actions">
       <button id="btn-select" class="icon-btn" aria-label="تحديد ملاحظات" title="تحديد عدة ملاحظات">
@@ -259,6 +259,14 @@
       <span class="lbl">رفع تلقائي بعد التحرير<small>يحدّث درايف خلال ثوانٍ من كل حفظ</small></span>
       <input id="gdrive-auto" type="checkbox" />
     </label>
+
+    <h4 class="sheet-sub">نسخ محلية تلقائية</h4>
+    <p class="hint" id="snap-status">تُحفظ لقطة من نصوصك كل 24 ساعة داخل التطبيق، وتُستبدل الأقدم باستمرار (تبقى آخر 7).</p>
+    <div id="snap-list"></div>
+    <button id="btn-snap-now" class="sheet-row">
+      <span class="ico">💾</span>
+      <span class="lbl">أخذ نسخة محلية الآن<small>لقطة فورية تُضاف لقائمة اللقطات</small></span>
+    </button>
 
     <h4 class="sheet-sub">نقل من تطبيقات أخرى</h4>
     <label class="sheet-row" for="file-keep">
